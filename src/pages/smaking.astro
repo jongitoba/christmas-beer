@@ -23,7 +23,7 @@ import Base from '../layouts/Base.astro';
       </div>
       <div>
         <label for="beer-description">Kort beskrivelse (valgfritt)</label>
-        <textarea id="beer-description" name="description" maxlength="300" rows="2" placeholder="F.eks. mørk og krydret, med hint av appelsin"></textarea>
+        <textarea id="beer-description" name="description" maxlength="300" rows="2" placeholder="F.eks mørk og krydret, med hint av appelsin, og duft av balle"></textarea>
       </div>
       <button type="submit">Legg til</button>
       <p class="error" id="add-error" role="alert"></p>
@@ -31,7 +31,7 @@ import Base from '../layouts/Base.astro';
   </section>
 
   <h2>Ølene</h2>
-  <p class="muted small">Gi hver øl en karakter fra 1 til 11 på hvert kriterium, gjerne med tre desimaler. Du ser bare dine egne karakterer til resultatene avsløres.</p>
+  <p class="muted small">Gi hver øl en karakter fra 1 til 11, med opptil tre desimaler. Du ser bare dine egne karakterer til resultatene avsløres.</p>
   <div id="beers" class="stack"><p class="muted">Laster …</p></div>
 
   <h2>Fremdrift</h2>
@@ -105,7 +105,7 @@ import Base from '../layouts/Base.astro';
         ? h('div', { className: 'row' }, tasting.participants.map((p) =>
             h('span', { className: `chip${total && p.completed === total ? ' done' : ''}` }, `${p.name} ${p.completed}/${total}`)))
         : h('p', { className: 'muted' }, 'Ingen deltakere ennå.'),
-      h('p', { className: 'small muted', style: 'margin: 10px 0 0' }, 'Antall øl hver person har gitt alle karakterene.'),
+      h('p', { className: 'small muted', style: 'margin: 10px 0 0' }, 'Antall øl ferdigvurdert.'),
     );
   }
 
@@ -211,7 +211,7 @@ import Base from '../layouts/Base.astro';
     const form = h('form', { className: 'score-form' },
       rows,
       h('div', { className: 'comment-field' },
-        h('label', { for: commentId }, 'Kommentar ', h('span', {}, '(valgfritt, vises for alle når resultatene avsløres)')),
+        h('label', { for: commentId }, 'Kommentar ', h('span', {}, '(valgfritt)')),
         comment,
       ),
       h('div', { className: 'spread', style: 'align-items: center' },

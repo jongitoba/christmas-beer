@@ -34,6 +34,9 @@ Chosen stack (the same as jonoba.no, plus D1):
   `GROUP_CODE`, `ADMIN_CODE` and `SESSION_SECRET` are Cloudflare Secrets; there are no
   built-in fallback codes, and the API fails closed (500) if one is missing.
   Session is an HMAC-signed cookie (`worker/session.ts`).
+- **Public results (Jon's decision):** `GET /api/years`, `/api/results` and `/api/history` and
+  the Resultater page work without login, but only show revealed years; an unrevealed year
+  answers 403 for everyone. Everything else under `/api` needs a session.
 - **Tests:** `node:test` for unit and API tests (`test/`, D1 is faked with `node:sqlite`),
   plus `scripts/test-e2e.mjs` against the real Worker.
 - **Node:** `24`, pinned in `.node-version`.

@@ -72,15 +72,44 @@ test('non-API paths are served as static assets', async () => {
   assert.equal(await res.text(), 'static page');
 });
 
-test('everything except login needs a session', async () => {
+test('everything except login and public results needs a session', async () => {
   const c = client(makeEnv());
-  for (const path of ['/api/me', '/api/tasting', '/api/results', '/api/years', '/api/participants']) {
+  for (const path of ['/api/me', '/api/tasting', '/api/tasting?year=2000', '/api/participants']) {
     assert.equal((await c.call('GET', path)).status, 401, path);
   }
   assert.equal((await c.call('POST', '/api/beers', { name: 'X' })).status, 401);
   assert.equal((await c.call('PUT', '/api/ratings/1', { scores: {} })).status, 401);
   c.setCookie('forged.cookie');
   assert.equal((await c.call('GET', '/api/me')).status, 401);
+});
+
+test('results are public, but only for revealed years', async () => {
+  const env = makeEnv();
+  const kari = client(env);
+  const jon = client(env);
+  await kari.join('jul', 'Kari');
+  await jon.join('nisse', 'Jon');
+  const beer = (await kari.call('POST', '/api/beers', { name: 'Nisseøl' })).body;
+  await kari.call('PUT', `/api/ratings/${beer.id}`, { scores: { smak: 9 } });
+  const anon = client(env);
+
+  // Not revealed: nobody sees results, logged in or not.
+  assert.equal((await anon.call('GET', '/api/results')).status, 403);
+  assert.deepEqual((await anon.call('GET', '/api/history')).body, { years: [] });
+  const years = await anon.call('GET', '/api/years');
+  assert.equal(years.status, 200);
+  assert.deepEqual(years.body.map((y: Json) => [y.year, y.revealed]), [[YEAR, false]]);
+
+  await jon.call('POST', '/api/admin/reveal', { year: YEAR, revealed: true });
+  const res = await anon.call('GET', '/api/results');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ranking[0].beer.name, 'Nisseøl');
+  assert.equal((await anon.call('GET', '/api/history')).body.years[0].year, YEAR);
+
+  // Everything else still needs login, and writes are still refused.
+  assert.equal((await anon.call('GET', '/api/tasting')).status, 401);
+  assert.equal((await anon.call('PUT', `/api/ratings/${beer.id}`, { scores: { smak: 1 } })).status, 401);
+  assert.equal((await anon.call('POST', '/api/results', {})).status, 401);
 });
 
 test('wrong code is rejected; the session cookie is HttpOnly, Secure and SameSite', async () => {

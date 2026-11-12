@@ -205,18 +205,23 @@ export interface BeerInput {
   name: string;
   brewery: string;
   abv: number | null;
+  /** Short free text from whoever brought the beer. undefined on an update keeps the old one. */
+  description?: string;
 }
 
 export async function createBeer(db: D1Database, year: number, broughtBy: number, input: BeerInput): Promise<Beer> {
   const row = await db
-    .prepare(`INSERT INTO beers (year, brought_by, name, brewery, abv) VALUES (?, ?, ?, ?, ?) RETURNING ${BEER_COLUMNS}`)
-    .bind(year, broughtBy, input.name, input.brewery, input.abv)
+    .prepare(`INSERT INTO beers (year, brought_by, name, brewery, abv, description) VALUES (?, ?, ?, ?, ?, ?) RETURNING ${BEER_COLUMNS}`)
+    .bind(year, broughtBy, input.name, input.brewery, input.abv, input.description ?? '')
     .first<BeerRow>();
   return toBeer(row!);
 }
 
 export async function updateBeer(db: D1Database, id: number, input: BeerInput): Promise<void> {
-  await db.prepare('UPDATE beers SET name = ?, brewery = ?, abv = ? WHERE id = ?').bind(input.name, input.brewery, input.abv, id).run();
+  await db
+    .prepare('UPDATE beers SET name = ?, brewery = ?, abv = ?, description = COALESCE(?, description) WHERE id = ?')
+    .bind(input.name, input.brewery, input.abv, input.description ?? null, id)
+    .run();
 }
 
 export async function deleteBeer(db: D1Database, id: number): Promise<void> {

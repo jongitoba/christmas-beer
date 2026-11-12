@@ -91,7 +91,7 @@ input, select, textarea {
   width: 100%;
   min-height: 44px;
 }
-textarea { resize: vertical; display: block; }
+textarea { resize: vertical; display: block; line-height: 1.4; }
 input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button {
   background: var(--accent);
@@ -119,6 +119,7 @@ button.link { background: none; border: 0; padding: 0; min-height: 0; color: var
 
 /* Beer cards on the tasting page */
 .beer .meta { color: var(--muted); font-size: 0.9rem; margin-top: 2px; }
+.beer .desc { font-size: 0.95rem; margin: 6px 0 0; overflow-wrap: anywhere; }
 .beer .mine { text-align: right; flex-shrink: 0; }
 .beer .mine .value { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .beer .actions { margin-top: 12px; }

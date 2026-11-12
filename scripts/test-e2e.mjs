@@ -120,8 +120,9 @@ try {
     check('cross-origin write refused', (await kari('POST', '/api/me', { name: 'Kari' }, { origin: 'https://evil.example' })).status === 403);
     const me = await kari('POST', '/api/me', { name: 'Kari' });
     check('picking a name works', me.json?.participant?.name === 'Kari');
-    const beer = await kari('POST', '/api/beers', { name: 'Nisseøl', brewery: 'Aass', abv: '6.5' });
+    const beer = await kari('POST', '/api/beers', { name: 'Nisseøl', brewery: 'Aass', abv: '6.5', description: 'Mørk og krydret' });
     check('adding a beer works (D1 write)', beer.status === 201, String(beer.status));
+    check('the beer keeps its description', beer.json?.description === 'Mørk og krydret');
     const scores = { utseende: 7.345, lyd: 9, rase: 8, fylde: 10.5, smak: 11, wok: 1 };
     check('scoring works', (await kari('PUT', `/api/ratings/${beer.json.id}`, { scores, comment: 'Smaker jul' })).status === 200);
     check('too many decimals rejected', (await kari('PUT', `/api/ratings/${beer.json.id}`, { scores: { smak: 7.1234 } })).status === 400);

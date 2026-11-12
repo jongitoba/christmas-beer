@@ -187,7 +187,7 @@ test('full tasting: own scores only before reveal, full results after, locked on
   assert.equal(olaView.participants.find((p: Json) => p.name === 'Kari').completed, 2);
   assert.equal(olaView.participants.find((p: Json) => p.name === 'Ola').completed, 0);
   // No one else's scores anywhere in the response: beers only carry "mine", nothing like ratings or averages.
-  for (const b of olaView.beers) assert.deepEqual(Object.keys(b).sort(), ['abv', 'brewery', 'broughtBy', 'description', 'id', 'mine', 'name', 'note', 'raterCount']);
+  for (const b of olaView.beers) assert.deepEqual(Object.keys(b).sort(), ['abv', 'brewery', 'broughtBy', 'description', 'id', 'mine', 'myComment', 'name', 'note', 'raterCount']);
   assert.ok(!JSON.stringify(olaView).includes('ratings') && !JSON.stringify(olaView).includes('overall'), 'no foreign scores leak');
   assert.equal((await ola.call('GET', '/api/results')).status, 403);
 
@@ -232,6 +232,62 @@ test('score validation', async () => {
   await c.call('PUT', `/api/ratings/${beer.id}`, { scores: { smak: null } });
   const view = (await c.call('GET', '/api/tasting')).body;
   assert.deepEqual(view.beers[0].mine, { lyd: 6 });
+});
+
+test('comments: own only before reveal, everyone after, saved with or without scores', async () => {
+  const env = makeEnv();
+  const kari = client(env);
+  const ola = client(env);
+  const jon = client(env);
+  await kari.join('jul', 'Kari');
+  await ola.join('jul', 'Ola');
+  await jon.join('nisse', 'Jon');
+  const beer = (await kari.call('POST', '/api/beers', { name: 'Nisseøl' })).body;
+  const other = (await kari.call('POST', '/api/beers', { name: 'Juleøl' })).body;
+
+  // With scores; whitespace is tidied but line breaks are kept (at most one blank line).
+  assert.equal((await kari.call('PUT', `/api/ratings/${beer.id}`, { scores: { smak: 9 }, comment: '  God   og  søt\r\n\r\n\r\nMye kanel  ' })).status, 200);
+  // A comment on its own is fine too.
+  assert.equal((await ola.call('PUT', `/api/ratings/${beer.id}`, { comment: 'For bitter' })).status, 200);
+
+  const kariView = (await kari.call('GET', '/api/tasting')).body;
+  assert.equal(kariView.beers.find((b: Json) => b.id === beer.id).myComment, 'God og søt\n\nMye kanel');
+  assert.equal(kariView.beers.find((b: Json) => b.id === other.id).myComment, '');
+  const olaView = (await ola.call('GET', '/api/tasting')).body;
+  assert.equal(olaView.beers.find((b: Json) => b.id === beer.id).myComment, 'For bitter');
+  assert.ok(!JSON.stringify(olaView).includes('kanel'), "Kari's comment does not leak before the reveal");
+  // A comment alone does not count as a score.
+  assert.equal(olaView.beers.find((b: Json) => b.id === beer.id).raterCount, 1);
+
+  // Leaving out the comment keeps it; an empty comment removes it.
+  await ola.call('PUT', `/api/ratings/${beer.id}`, { scores: { smak: 4 } });
+  assert.equal((await ola.call('GET', '/api/tasting')).body.beers.find((b: Json) => b.id === beer.id).myComment, 'For bitter');
+  await ola.call('PUT', `/api/ratings/${beer.id}`, { comment: 'Feil øl' });
+  await kari.call('PUT', `/api/ratings/${other.id}`, { comment: 'Midt på treet' });
+  await kari.call('PUT', `/api/ratings/${other.id}`, { comment: '   ' });
+
+  // Validation.
+  assert.equal((await kari.call('PUT', `/api/ratings/${beer.id}`, { comment: 'x'.repeat(501) })).status, 400);
+  assert.equal((await kari.call('PUT', `/api/ratings/${beer.id}`, { comment: 42 })).status, 400);
+  assert.equal((await kari.call('PUT', `/api/ratings/${beer.id}`, {})).status, 400);
+
+  await jon.call('POST', '/api/admin/reveal', { year: YEAR, revealed: true });
+  const res = (await ola.call('GET', '/api/results')).body;
+  const byName = (name: string) => res.ranking.find((r: Json) => r.beer.name === name);
+  assert.deepEqual(byName('Nisseøl').comments, [
+    { participant: 'Kari', text: 'God og søt\n\nMye kanel' },
+    { participant: 'Ola', text: 'Feil øl' },
+  ]);
+  assert.deepEqual(byName('Juleøl').comments, []);
+  // Locked after reveal, like the scores.
+  assert.equal((await ola.call('PUT', `/api/ratings/${beer.id}`, { comment: 'Endret' })).status, 409);
+  // The history endpoint carries no comments.
+  assert.ok(!JSON.stringify((await ola.call('GET', '/api/history')).body).includes('kanel'));
+
+  // Deleting a beer removes its comments.
+  await jon.call('POST', '/api/admin/reveal', { year: YEAR, revealed: false });
+  assert.equal((await kari.call('DELETE', `/api/beers/${beer.id}`)).status, 200);
+  assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM comments').first<number>('n')), 0);
 });
 
 test('beer validation', async () => {

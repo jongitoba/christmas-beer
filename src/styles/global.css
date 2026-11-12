@@ -81,8 +81,8 @@ h3 { font-size: 1.1rem; margin: 0; }
 .spread { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
 
 label { display: block; font-size: 0.875rem; color: var(--muted); margin-bottom: 4px; }
-input, select, button { font: inherit; }
-input, select {
+input, select, textarea, button { font: inherit; }
+input, select, textarea {
   background: var(--bg);
   color: var(--fg);
   border: 1px solid var(--line);
@@ -91,7 +91,8 @@ input, select {
   width: 100%;
   min-height: 44px;
 }
-input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+textarea { resize: vertical; display: block; }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button {
   background: var(--accent);
   color: var(--accent-fg);
@@ -121,6 +122,9 @@ button.link { background: none; border: 0; padding: 0; min-height: 0; color: var
 .beer .mine { text-align: right; flex-shrink: 0; }
 .beer .mine .value { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .beer .actions { margin-top: 12px; }
+.comment-field label { color: var(--fg); font-weight: 600; font-size: 0.95rem; }
+.comment-field label span { color: var(--muted); font-weight: 400; font-size: 0.875rem; }
+.beer .my-comment { white-space: pre-line; font-size: 0.9rem; margin: 8px 0 0; overflow-wrap: anywhere; }
 .score-form { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; display: grid; gap: 14px; }
 .score-row { display: grid; grid-template-columns: 1fr 96px; gap: 6px 12px; align-items: center; }
 .score-row label { grid-column: 1 / -1; margin: 0; color: var(--fg); font-weight: 600; font-size: 0.95rem; }

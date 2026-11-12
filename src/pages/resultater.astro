@@ -34,12 +34,25 @@ import Base from '../layouts/Base.astro';
   };
   const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+  /** null when not logged in: the results page is public, only the tasting needs login. */
+  let me: Me | null = null;
+
+  /** The tasting year by the calendar in Norway, same as the Worker. */
+  const thisYear = () => Number(new Intl.DateTimeFormat('en', { timeZone: 'Europe/Oslo', year: 'numeric' }).format(new Date()));
+
   async function start() {
-    const me = await api<Me>('GET', '/api/me');
-    showAdminLink(me);
-    const years = await api<YearSummary[]>('GET', '/api/years');
+    try {
+      me = await api<Me>('GET', '/api/me', undefined, { redirectOn401: false });
+      showAdminLink(me);
+    } catch {}
+    const years = await api<YearSummary[]>('GET', '/api/years', undefined, { redirectOn401: false });
     const param = new URLSearchParams(location.search).get('år');
-    const wanted = param === ALL ? ALL : String(Number(param) || me.year);
+    // Without a choice in the URL: this year if it is revealed (or you are logged in and
+    // can see your own ranking), otherwise all earlier years rather than an empty page.
+    const current = me?.year ?? thisYear();
+    const currentYear = years.find((y) => y.year === current);
+    const fallback = currentYear?.revealed || (me && currentYear) || !years.some((y) => y.revealed) ? String(current) : ALL;
+    const wanted = param === ALL ? ALL : param && Number(param) ? String(Number(param)) : fallback;
     if (wanted !== ALL && !years.some((y) => String(y.year) === wanted)) years.unshift({ year: Number(wanted), revealed: false, beerCount: 0 });
     render(yearSelect,
       h('option', { value: ALL, selected: wanted === ALL }, 'Alle år'),
@@ -69,19 +82,23 @@ import Base from '../layouts/Base.astro';
       drawResults(await api<Results>('GET', `/api/results?year=${year}`));
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) return drawHidden(year);
-      if (e instanceof ApiError && e.status === 404) return render(content, h('p', { className: 'muted' }, `Ingen smaking registrert for ${year}.`));
+      if (e instanceof ApiError && e.status === 404) {
+        return render(content, h('p', { className: 'muted' }, `Ingen smaking registrert for ${year}. `, h('a', { href: `?år=${ALL}` }, 'Se tidligere år →')));
+      }
       render(content, h('p', { className: 'error' }, (e as Error).message));
     }
   }
 
   // ------------------------------------------------------------------ a year that is not revealed
 
-  /** Before the reveal: your own ranking only. */
+  /** Before the reveal: your own ranking only (if you are logged in). */
   async function drawHidden(year: number) {
     let tasting: Tasting | null = null;
-    try {
-      tasting = await api<Tasting>('GET', `/api/tasting?year=${year}`);
-    } catch {}
+    if (me) {
+      try {
+        tasting = await api<Tasting>('GET', `/api/tasting?year=${year}`, undefined, { redirectOn401: false });
+      } catch {}
+    }
     const mine = tasting && tasting.me
       ? rank(summarize(
           tasting.beers.map((b) => b.id),
@@ -91,9 +108,9 @@ import Base from '../layouts/Base.astro';
       : [];
     const beerName = (id: number) => tasting!.beers.find((b) => b.id === id)!.name;
     render(content,
-      h('div', { className: 'notice' }, '🤫 Resultatene er hemmelige til de blir avslørt. Her ser du bare din egen rangering. ',
+      h('div', { className: 'notice' }, `🤫 Resultatene er hemmelige til de blir avslørt.${me ? ' Her ser du bare din egen rangering.' : ''} `,
         h('a', { href: `?år=${ALL}` }, 'Se tidligere år →')),
-      mine.length
+      !me ? null : mine.length
         ? h('div', { className: 'card' },
             h('h2', { style: 'margin-top: 0' }, 'Din rangering så langt'),
             h('table', {},
@@ -202,6 +219,8 @@ import Base from '../layouts/Base.astro';
       r.beer.note && h('p', { className: 'beer-note' }, r.beer.note),
       h('div', { className: 'criteria-grid' }, criteria.map((c) =>
         h('div', {}, h('div', { className: 'k' }, c.label), h('div', { className: 'v' }, formatScore(r.criteria[c.key]))))),
+      r.comments.length > 0 && h('ul', { className: 'comments', 'aria-label': 'Kommentarer' }, r.comments.map((c) =>
+        h('li', {}, h('strong', {}, c.participant), h('p', {}, c.text)))),
       r.ratings.length > 0 && h('details', {},
         h('summary', {}, 'Se alle karakterene'),
         h('div', { className: 'table-scroll' },

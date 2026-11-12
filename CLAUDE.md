@@ -34,6 +34,9 @@ Chosen stack (the same as jonoba.no, plus D1):
   `GROUP_CODE`, `ADMIN_CODE` and `SESSION_SECRET` are Cloudflare Secrets; there are no
   built-in fallback codes, and the API fails closed (500) if one is missing.
   Session is an HMAC-signed cookie (`worker/session.ts`).
+- **Public results (Jon's decision):** `GET /api/years`, `/api/results` and `/api/history` and
+  the Resultater page work without login, but only show revealed years; an unrevealed year
+  answers 403 for everyone. Everything else under `/api` needs a session.
 - **Tests:** `node:test` for unit and API tests (`test/`, D1 is faked with `node:sqlite`),
   plus `scripts/test-e2e.mjs` against the real Worker.
 - **Node:** `24`, pinned in `.node-version`.
@@ -45,8 +48,11 @@ Domain rules that the code depends on:
   then the mean of those criterion averages. Missing scores are left out.
 - Criteria live in `src/lib/score.ts`. Each tasting stores its own copy, so editing the
   list only affects new years.
-- Before the admin reveals a year, people only see their own scores. Revealed years
-  are locked. `/api/history` and the "Alle år" charts only use revealed years.
+- Before the admin reveals a year, people only see their own scores and comments. Revealed
+  years are locked. `/api/history` and the "Alle år" charts only use revealed years.
+- Each person can leave one optional comment per beer (max 500 characters, `comments`
+  table), saved with the scores. Comments are not part of any score and are left out of
+  `/api/history`.
 - A beer can be `unranked` ("utenfor konkurranse"): shown with its scores, but given no
   place and left out of winners and all-time lists. Used for 2024's St. Arnold, which only
   one person rated.

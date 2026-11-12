@@ -47,7 +47,12 @@ export interface TastingBeer {
   note: string;
   raterCount: number;
   mine: Record<string, number>;
+  /** Your own comment on the beer, '' if none. Everyone's comments show after the reveal. */
+  myComment: string;
 }
+
+/** Same limit as the Worker. */
+export const MAX_COMMENT = 500;
 
 export interface Tasting {
   year: number;
@@ -65,6 +70,7 @@ export interface RankedBeer {
   raterCount: number;
   beer: { id: number; name: string; brewery: string; abv: number | null; broughtBy: string | null; description: string; note: string; unranked: boolean };
   ratings: { participant: string; scores: Record<string, number> }[];
+  comments: { participant: string; text: string }[];
 }
 
 export interface Results {
@@ -79,7 +85,7 @@ export interface HistoryYear {
   /** Average of every single score given that year. */
   scoreAverage: number | null;
   people: { name: string; scoreCount: number; average: number | null }[];
-  beers: Omit<RankedBeer, 'ratings'>[];
+  beers: Omit<RankedBeer, 'ratings' | 'comments'>[];
 }
 
 export interface History {

@@ -39,7 +39,7 @@ import Base from '../layouts/Base.astro';
 </Base>
 
 <script>
-  import { api, beerMeta, showAdminLink, type Me, type Tasting, type TastingBeer } from '../client/api.ts';
+  import { api, beerMeta, showAdminLink, MAX_COMMENT, type Me, type Tasting, type TastingBeer } from '../client/api.ts';
   import { $, h, render } from '../client/dom.ts';
   import { formatScore, parseScoreInput, MAX_SCORE, MIN_SCORE } from '../lib/score.ts';
 
@@ -126,6 +126,7 @@ import Base from '../layouts/Base.astro';
             h('span', { className: `chip${count === total ? ' done' : ''}` }, `Du: ${count}/${total}`),
             h('span', { className: 'chip' }, `${beer.raterCount} har vurdert`),
           ),
+          !isOpen && beer.myComment && h('p', { className: 'my-comment' }, h('span', { className: 'muted' }, 'Din kommentar: '), beer.myComment),
         ),
         h('div', { className: 'mine' },
           h('div', { className: 'small muted' }, 'Ditt snitt'),
@@ -200,8 +201,19 @@ import Base from '../layouts/Base.astro';
         h('span', { id: `${id}-hint`, hidden: true }, `Tall fra ${MIN_SCORE} til ${MAX_SCORE}, maks tre desimaler`));
     });
 
+    const commentId = `c-${beer.id}`;
+    const comment = h('textarea', {
+      id: commentId, rows: 3, maxlength: MAX_COMMENT, placeholder: 'Hva synes du om ølet?',
+      value: beer.myComment,
+    });
+    comment.addEventListener('input', () => (status.textContent = ''));
+
     const form = h('form', { className: 'score-form' },
       rows,
+      h('div', { className: 'comment-field' },
+        h('label', { for: commentId }, 'Kommentar ', h('span', {}, '(valgfritt, vises for alle når resultatene avsløres)')),
+        comment,
+      ),
       h('div', { className: 'spread', style: 'align-items: center' },
         h('div', {}, h('span', { className: 'muted small' }, 'Ditt snitt: '), preview),
         h('div', { className: 'row' }, status, h('button', { type: 'submit' }, 'Lagre')),
@@ -220,7 +232,7 @@ import Base from '../layouts/Base.astro';
       const button = form.querySelector<HTMLButtonElement>('button[type=submit]')!;
       button.disabled = true;
       try {
-        await api('PUT', `/api/ratings/${beer.id}`, { scores });
+        await api('PUT', `/api/ratings/${beer.id}`, { scores, comment: comment.value });
         tasting = await api<Tasting>('GET', '/api/tasting');
         open.delete(beer.id);
         if (tasting.revealed) draw();

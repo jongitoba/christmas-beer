@@ -91,7 +91,7 @@ input, select, textarea {
   width: 100%;
   min-height: 44px;
 }
-textarea { resize: vertical; line-height: 1.4; }
+textarea { resize: vertical; display: block; line-height: 1.4; }
 input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button {
   background: var(--accent);
@@ -123,6 +123,9 @@ button.link { background: none; border: 0; padding: 0; min-height: 0; color: var
 .beer .mine { text-align: right; flex-shrink: 0; }
 .beer .mine .value { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .beer .actions { margin-top: 12px; }
+.comment-field label { color: var(--fg); font-weight: 600; font-size: 0.95rem; }
+.comment-field label span { color: var(--muted); font-weight: 400; font-size: 0.875rem; }
+.beer .my-comment { white-space: pre-line; font-size: 0.9rem; margin: 8px 0 0; overflow-wrap: anywhere; }
 .score-form { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; display: grid; gap: 14px; }
 .score-row { display: grid; grid-template-columns: 1fr 96px; gap: 6px 12px; align-items: center; }
 .score-row label { grid-column: 1 / -1; margin: 0; color: var(--fg); font-weight: 600; font-size: 0.95rem; }

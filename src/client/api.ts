@@ -41,7 +41,10 @@ export interface TastingBeer {
   name: string;
   brewery: string;
   abv: number | null;
-  broughtBy: { id: number; name: string };
+  /** null for beers imported from earlier years, where nobody knows who brought them. */
+  broughtBy: { id: number; name: string } | null;
+  description: string;
+  note: string;
   raterCount: number;
   mine: Record<string, number>;
 }
@@ -60,7 +63,7 @@ export interface RankedBeer {
   overall: number | null;
   criteria: Record<string, number | null>;
   raterCount: number;
-  beer: { id: number; name: string; brewery: string; abv: number | null; broughtBy: string };
+  beer: { id: number; name: string; brewery: string; abv: number | null; broughtBy: string | null; description: string; note: string; unranked: boolean };
   ratings: { participant: string; scores: Record<string, number> }[];
 }
 
@@ -68,6 +71,19 @@ export interface Results {
   year: number;
   criteria: Criterion[];
   ranking: RankedBeer[];
+}
+
+export interface HistoryYear {
+  year: number;
+  criteria: Criterion[];
+  /** Average of every single score given that year. */
+  scoreAverage: number | null;
+  people: { name: string; scoreCount: number; average: number | null }[];
+  beers: Omit<RankedBeer, 'ratings'>[];
+}
+
+export interface History {
+  years: HistoryYear[];
 }
 
 export interface YearSummary {

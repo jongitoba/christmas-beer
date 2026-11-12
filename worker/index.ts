@@ -164,7 +164,9 @@ async function tastingView(ctx: Ctx, year: number) {
         name: b.name,
         brewery: b.brewery,
         abv: b.abv,
-        broughtBy: { id: b.broughtBy, name: names.get(b.broughtBy) ?? '?' },
+        broughtBy: b.broughtBy == null ? null : { id: b.broughtBy, name: names.get(b.broughtBy) ?? '?' },
+        description: b.description,
+        note: b.note,
         raterCount: new Set(ratings.filter((r) => r.beerId === b.id).map((r) => r.participantId)).size,
         mine,
       };
@@ -172,21 +174,28 @@ async function tastingView(ctx: Ctx, year: number) {
   };
 }
 
-async function results(ctx: Ctx, year: number) {
-  const tasting = await db.getTasting(ctx.env.DB, year);
-  if (!tasting) throw new HttpError(404, 'Fant ingen smaking for ' + year);
-  if (!tasting.revealed) throw new HttpError(403, 'Resultatene er ikke avslørt ennå');
+/** Full results for one revealed year: ranking, averages and everyone's scores. */
+async function yearResults(env: Env, tasting: db.Tasting) {
+  const year = tasting.year;
   const [participants, beers, ratings] = await Promise.all([
-    db.listParticipants(ctx.env.DB, year),
-    db.listBeers(ctx.env.DB, year),
-    db.listRatings(ctx.env.DB, year),
+    db.listParticipants(env.DB, year),
+    db.listBeers(env.DB, year),
+    db.listRatings(env.DB, year),
   ]);
   const names = new Map(participants.map((p) => [p.id, p.name]));
   const beerById = new Map(beers.map((b) => [b.id, b]));
-  const ranked = rank(summarize(beers.map((b) => b.id), ratings, tasting.criteria));
+  // Beers marked unranked keep their scores but get no place; they come last.
+  const unranked = new Set(beers.filter((b) => b.unranked).map((b) => b.id));
+  const summaries = summarize(beers.map((b) => b.id), ratings, tasting.criteria);
+  const ranked = [
+    ...rank(summaries.filter((s) => !unranked.has(s.beerId))),
+    ...summaries.filter((s) => unranked.has(s.beerId)).map((s) => ({ ...s, place: null })),
+  ];
   return {
     year,
     criteria: tasting.criteria,
+    participants: participants.map((p) => p.name),
+    ratingRows: ratings.map((r) => ({ ...r, participant: names.get(r.participantId) ?? '?' })),
     ranking: ranked.map((s) => {
       const beer = beerById.get(s.beerId)!;
       const raters = [...new Set(ratings.filter((r) => r.beerId === s.beerId).map((r) => r.participantId))];
@@ -195,7 +204,10 @@ async function results(ctx: Ctx, year: number) {
         overall: s.overall,
         criteria: s.criteria,
         raterCount: s.raterCount,
-        beer: { id: beer.id, name: beer.name, brewery: beer.brewery, abv: beer.abv, broughtBy: names.get(beer.broughtBy) ?? '?' },
+        beer: {
+          id: beer.id, name: beer.name, brewery: beer.brewery, abv: beer.abv, description: beer.description, note: beer.note, unranked: beer.unranked,
+          broughtBy: beer.broughtBy == null ? null : names.get(beer.broughtBy) ?? '?',
+        },
         ratings: raters
           .map((pid) => {
             const scores: Record<string, number> = {};
@@ -206,6 +218,42 @@ async function results(ctx: Ctx, year: number) {
       };
     }),
   };
+}
+
+async function results(ctx: Ctx, year: number) {
+  const tasting = await db.getTasting(ctx.env.DB, year);
+  if (!tasting) throw new HttpError(404, 'Fant ingen smaking for ' + year);
+  if (!tasting.revealed) throw new HttpError(403, 'Resultatene er ikke avslørt ennå');
+  const { ratingRows: _, participants: __, ...rest } = await yearResults(ctx.env, tasting);
+  return rest;
+}
+
+/**
+ * Every revealed year, for the charts across years. Per beer only the averages (no individual
+ * scores); per person how many scores they gave and their average, to compare who rates hard.
+ * Years that are not revealed yet are left out entirely.
+ */
+async function history(ctx: Ctx) {
+  const years = (await db.listTastings(ctx.env.DB)).filter((t) => t.revealed).map((t) => t.year);
+  const out = [];
+  for (const year of years.sort((a, b) => a - b)) {
+    const r = await yearResults(ctx.env, (await db.getTasting(ctx.env.DB, year))!);
+    const scores = r.ratingRows.map((x) => x.milli / 1000);
+    const people = r.participants
+      .map((name) => {
+        const given = r.ratingRows.filter((x) => x.participant === name).map((x) => x.milli / 1000);
+        return { name, scoreCount: given.length, average: given.length ? given.reduce((a, b) => a + b, 0) / given.length : null };
+      })
+      .filter((p) => p.scoreCount > 0);
+    out.push({
+      year,
+      criteria: r.criteria,
+      scoreAverage: scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null,
+      people,
+      beers: r.ranking.map(({ ratings: _, ...beer }) => beer),
+    });
+  }
+  return { years: out };
 }
 
 async function route(ctx: Ctx): Promise<Response> {
@@ -244,6 +292,8 @@ async function route(ctx: Ctx): Promise<Response> {
   if (path === '/api/tasting' && method === 'GET') return json(await tastingView(ctx, yearParam(url)));
 
   if (path === '/api/results' && method === 'GET') return json(await results(ctx, yearParam(url)));
+
+  if (path === '/api/history' && method === 'GET') return json(await history(ctx));
 
   if (path === '/api/beers' && method === 'POST') {
     const me = requireMe(ctx);

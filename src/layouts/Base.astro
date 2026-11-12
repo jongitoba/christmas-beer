@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import '../styles/charts.css';
 
 interface Props {
   title: string;
@@ -34,7 +35,7 @@ const current = (prefix: string) => (path.startsWith(prefix) ? 'page' : undefine
       <slot />
     </main>
     <footer class="site">
-      <div class="wrap">Karakterer fra 1 til 11 · <a href="https://jonoba.no">jonoba.no</a></div>
+      <div class="wrap">Julens vakreste happening · Copyright: <a href="https://jonoba.no">jonoba.no</a></div>
     </footer>
   </body>
 </html>

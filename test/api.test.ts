@@ -187,7 +187,7 @@ test('full tasting: own scores only before reveal, full results after, locked on
   assert.equal(olaView.participants.find((p: Json) => p.name === 'Kari').completed, 2);
   assert.equal(olaView.participants.find((p: Json) => p.name === 'Ola').completed, 0);
   // No one else's scores anywhere in the response: beers only carry "mine", nothing like ratings or averages.
-  for (const b of olaView.beers) assert.deepEqual(Object.keys(b).sort(), ['abv', 'brewery', 'broughtBy', 'id', 'mine', 'name', 'raterCount']);
+  for (const b of olaView.beers) assert.deepEqual(Object.keys(b).sort(), ['abv', 'brewery', 'broughtBy', 'description', 'id', 'mine', 'name', 'note', 'raterCount']);
   assert.ok(!JSON.stringify(olaView).includes('ratings') && !JSON.stringify(olaView).includes('overall'), 'no foreign scores leak');
   assert.equal((await ola.call('GET', '/api/results')).status, 403);
 

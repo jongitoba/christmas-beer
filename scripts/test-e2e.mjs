@@ -82,7 +82,7 @@ try {
   const anon = client();
   const blocked = [
     ['GET', '/api/me'], ['GET', '/api/tasting'], ['GET', '/api/results'], ['GET', '/api/years'],
-    ['GET', '/api/participants'], ['POST', '/api/beers', { name: 'x' }], ['PUT', '/api/ratings/1', { scores: {} }],
+    ['GET', '/api/participants'], ['GET', '/api/history'], ['POST', '/api/beers', { name: 'x' }], ['PUT', '/api/ratings/1', { scores: {} }],
     ['POST', '/api/admin/reveal', { year: 2026, revealed: true }], ['DELETE', '/api/admin/participants/1'],
   ];
   for (const [m, p, b] of blocked) {
@@ -128,6 +128,8 @@ try {
     const top = results.json?.ranking?.[0];
     const expected = (7.345 + 9 + 8 + 10.5 + 11 + 1) / 6;
     check('results show the overall score', top && Math.abs(top.overall - expected) < 1e-9, top && String(top.overall));
+    const hist = await kari('GET', '/api/history');
+    check('revealed year shows up in history', hist.json?.years?.some((y) => y.year === view.json.year && y.beers.length === 1));
     check('locked after reveal', (await kari('PUT', `/api/ratings/${beer.json.id}`, { scores: { smak: 5 } })).status === 409);
   }
 } finally {

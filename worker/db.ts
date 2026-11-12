@@ -2,8 +2,25 @@
  * D1 schema and queries. The Worker creates the tables itself on first use
  * (CREATE TABLE IF NOT EXISTS), so a fresh database works without a migration step.
  * Scores are stored as integer thousandths (7.345 → 7345) to avoid float rounding.
+ *
+ * Schema changes must be additive, applied in migrate() below, because existing
+ * databases keep their old tables (CREATE TABLE IF NOT EXISTS does nothing for them).
  */
 import { CRITERIA, type Criterion, type RatingRow } from '../src/lib/score.ts';
+
+// brought_by is nullable: beers imported from earlier years have no known owner.
+const CREATE_BEERS = `CREATE TABLE IF NOT EXISTS beers (
+    id INTEGER PRIMARY KEY,
+    year INTEGER NOT NULL REFERENCES tastings(year),
+    brought_by INTEGER REFERENCES participants(id),
+    name TEXT NOT NULL,
+    brewery TEXT NOT NULL DEFAULT '',
+    abv REAL,
+    description TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    unranked INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`;
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS tastings (
@@ -19,15 +36,7 @@ const SCHEMA = [
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (year, name COLLATE NOCASE)
   )`,
-  `CREATE TABLE IF NOT EXISTS beers (
-    id INTEGER PRIMARY KEY,
-    year INTEGER NOT NULL REFERENCES tastings(year),
-    brought_by INTEGER NOT NULL REFERENCES participants(id),
-    name TEXT NOT NULL,
-    brewery TEXT NOT NULL DEFAULT '',
-    abv REAL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
+  CREATE_BEERS,
   `CREATE TABLE IF NOT EXISTS ratings (
     participant_id INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
     beer_id INTEGER NOT NULL REFERENCES beers(id) ON DELETE CASCADE,
@@ -44,7 +53,28 @@ const ready = new WeakSet<D1Database>();
 export async function ensureSchema(db: D1Database): Promise<void> {
   if (ready.has(db)) return;
   await db.batch(SCHEMA.map((sql) => db.prepare(sql)));
+  await migrate(db);
   ready.add(db);
+}
+
+/** Brings databases created by earlier versions up to the current schema. Safe to run every time. */
+async function migrate(db: D1Database): Promise<void> {
+  const { results: columns } = await db.prepare('PRAGMA table_info(beers)').all<{ name: string; notnull: number }>();
+  const has = (name: string) => columns.some((c) => c.name === name);
+  const add: D1PreparedStatement[] = [];
+  if (!has('description')) add.push(db.prepare("ALTER TABLE beers ADD COLUMN description TEXT NOT NULL DEFAULT ''"));
+  if (!has('note')) add.push(db.prepare("ALTER TABLE beers ADD COLUMN note TEXT NOT NULL DEFAULT ''"));
+  if (!has('unranked')) add.push(db.prepare('ALTER TABLE beers ADD COLUMN unranked INTEGER NOT NULL DEFAULT 0'));
+  if (add.length) await db.batch(add);
+
+  // The first version had brought_by NOT NULL. SQLite cannot drop that constraint in place,
+  // so the table is recreated, but only while it is empty: dropping a table with rows
+  // would cascade-delete their ratings.
+  if (columns.find((c) => c.name === 'brought_by')?.notnull) {
+    const count = (await db.prepare('SELECT COUNT(*) AS n FROM beers').first<number>('n')) ?? 0;
+    if (count === 0) await db.batch([db.prepare('DROP TABLE beers'), db.prepare(CREATE_BEERS)]);
+    else console.warn('beers.brought_by is still NOT NULL because the table has rows; beers without an owner cannot be stored');
+  }
 }
 
 export interface Tasting {
@@ -62,17 +92,25 @@ export interface Participant {
 export interface Beer {
   id: number;
   year: number;
-  broughtBy: number;
+  /** null for imported beers where nobody knows who brought them. */
+  broughtBy: number | null;
   name: string;
   brewery: string;
   abv: number | null;
+  description: string;
+  note: string;
+  /** Shown with its scores but left out of the ranking ("utenfor konkurranse"). */
+  unranked: boolean;
 }
 
 interface TastingRow { year: number; criteria: string; revealed_at: string | null }
-interface BeerRow { id: number; year: number; brought_by: number; name: string; brewery: string; abv: number | null }
+interface BeerRow { id: number; year: number; brought_by: number | null; name: string; brewery: string; abv: number | null; description: string; note: string; unranked: number }
+const BEER_COLUMNS = 'id, year, brought_by, name, brewery, abv, description, note, unranked';
 
 const toTasting = (r: TastingRow): Tasting => ({ year: r.year, criteria: JSON.parse(r.criteria), revealed: r.revealed_at != null });
-const toBeer = (r: BeerRow): Beer => ({ id: r.id, year: r.year, broughtBy: r.brought_by, name: r.name, brewery: r.brewery, abv: r.abv });
+const toBeer = (r: BeerRow): Beer => ({
+  id: r.id, year: r.year, broughtBy: r.brought_by, name: r.name, brewery: r.brewery, abv: r.abv, description: r.description, note: r.note, unranked: r.unranked === 1,
+});
 
 export async function getTasting(db: D1Database, year: number): Promise<Tasting | null> {
   const row = await db.prepare('SELECT year, criteria, revealed_at FROM tastings WHERE year = ?').bind(year).first<TastingRow>();
@@ -143,14 +181,14 @@ export async function countBeersBroughtBy(db: D1Database, participantId: number)
 
 export async function listBeers(db: D1Database, year: number): Promise<Beer[]> {
   const { results } = await db
-    .prepare('SELECT id, year, brought_by, name, brewery, abv FROM beers WHERE year = ? ORDER BY id')
+    .prepare(`SELECT ${BEER_COLUMNS} FROM beers WHERE year = ? ORDER BY id`)
     .bind(year)
     .all<BeerRow>();
   return results.map(toBeer);
 }
 
 export async function getBeer(db: D1Database, id: number): Promise<Beer | null> {
-  const row = await db.prepare('SELECT id, year, brought_by, name, brewery, abv FROM beers WHERE id = ?').bind(id).first<BeerRow>();
+  const row = await db.prepare(`SELECT ${BEER_COLUMNS} FROM beers WHERE id = ?`).bind(id).first<BeerRow>();
   return row ? toBeer(row) : null;
 }
 
@@ -162,7 +200,7 @@ export interface BeerInput {
 
 export async function createBeer(db: D1Database, year: number, broughtBy: number, input: BeerInput): Promise<Beer> {
   const row = await db
-    .prepare('INSERT INTO beers (year, brought_by, name, brewery, abv) VALUES (?, ?, ?, ?, ?) RETURNING id, year, brought_by, name, brewery, abv')
+    .prepare(`INSERT INTO beers (year, brought_by, name, brewery, abv) VALUES (?, ?, ?, ?, ?) RETURNING ${BEER_COLUMNS}`)
     .bind(year, broughtBy, input.name, input.brewery, input.abv)
     .first<BeerRow>();
   return toBeer(row!);

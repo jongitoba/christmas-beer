@@ -123,10 +123,11 @@ try {
     const beer = await kari('POST', '/api/beers', { name: 'Nisseøl', brewery: 'Aass', abv: '6.5' });
     check('adding a beer works (D1 write)', beer.status === 201, String(beer.status));
     const scores = { utseende: 7.345, lyd: 9, rase: 8, fylde: 10.5, smak: 11, wok: 1 };
-    check('scoring works', (await kari('PUT', `/api/ratings/${beer.json.id}`, { scores })).status === 200);
+    check('scoring works', (await kari('PUT', `/api/ratings/${beer.json.id}`, { scores, comment: 'Smaker jul' })).status === 200);
     check('too many decimals rejected', (await kari('PUT', `/api/ratings/${beer.json.id}`, { scores: { smak: 7.1234 } })).status === 400);
     const view = await kari('GET', '/api/tasting');
     check('own scores are visible', view.json?.beers?.[0]?.mine?.utseende === 7.345);
+    check('own comment is visible', view.json?.beers?.[0]?.myComment === 'Smaker jul');
     check('results hidden before reveal', (await kari('GET', '/api/results')).status === 403);
     check('results hidden before reveal, also without login', (await anon('GET', `/api/results?year=${view.json.year}`)).status === 403);
 
@@ -138,6 +139,7 @@ try {
     const top = results.json?.ranking?.[0];
     const expected = (7.345 + 9 + 8 + 10.5 + 11 + 1) / 6;
     check('results show the overall score', top && Math.abs(top.overall - expected) < 1e-9, top && String(top.overall));
+    check('results show the comments', top?.comments?.[0]?.text === 'Smaker jul' && top.comments[0].participant === 'Kari');
     const hist = await kari('GET', '/api/history');
     check('revealed year shows up in history', hist.json?.years?.some((y) => y.year === view.json.year && y.beers.length === 1));
     check('revealed results are public', (await anon('GET', `/api/results?year=${view.json.year}`)).status === 200);

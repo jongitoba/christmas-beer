@@ -46,6 +46,15 @@ const SCHEMA = [
     PRIMARY KEY (participant_id, beer_id, criterion)
   )`,
   `CREATE INDEX IF NOT EXISTS ratings_beer ON ratings(beer_id)`,
+  // One free-text comment per person per beer, given together with the scores.
+  `CREATE TABLE IF NOT EXISTS comments (
+    participant_id INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+    beer_id INTEGER NOT NULL REFERENCES beers(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (participant_id, beer_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS comments_beer ON comments(beer_id)`,
 ];
 
 const ready = new WeakSet<D1Database>();
@@ -225,8 +234,13 @@ export async function listRatings(db: D1Database, year: number): Promise<RatingR
   return results;
 }
 
-/** Sets or clears (null) one participant's scores for one beer, all in one transaction. */
-export async function saveRatings(db: D1Database, participantId: number, beerId: number, scores: Record<string, number | null>): Promise<void> {
+/**
+ * Sets or clears (null) one participant's scores for one beer, and their comment if one is
+ * given (an empty comment removes it), all in one transaction.
+ */
+export async function saveRatings(
+  db: D1Database, participantId: number, beerId: number, scores: Record<string, number | null>, comment?: string,
+): Promise<void> {
   const statements = Object.entries(scores).map(([criterion, milli]) =>
     milli == null
       ? db.prepare('DELETE FROM ratings WHERE participant_id = ? AND beer_id = ? AND criterion = ?').bind(participantId, beerId, criterion)
@@ -237,5 +251,34 @@ export async function saveRatings(db: D1Database, participantId: number, beerId:
           )
           .bind(participantId, beerId, criterion, milli),
   );
+  if (comment !== undefined) statements.push(commentStatement(db, participantId, beerId, comment));
   if (statements.length) await db.batch(statements);
+}
+
+export interface CommentRow {
+  beerId: number;
+  participantId: number;
+  text: string;
+}
+
+export async function listComments(db: D1Database, year: number): Promise<CommentRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT c.beer_id AS beerId, c.participant_id AS participantId, c.text
+       FROM comments c JOIN beers b ON b.id = c.beer_id WHERE b.year = ?`,
+    )
+    .bind(year)
+    .all<CommentRow>();
+  return results;
+}
+
+function commentStatement(db: D1Database, participantId: number, beerId: number, text: string): D1PreparedStatement {
+  return text
+    ? db
+        .prepare(
+          `INSERT INTO comments (participant_id, beer_id, text) VALUES (?, ?, ?)
+           ON CONFLICT (participant_id, beer_id) DO UPDATE SET text = excluded.text, updated_at = datetime('now')`,
+        )
+        .bind(participantId, beerId, text)
+    : db.prepare('DELETE FROM comments WHERE participant_id = ? AND beer_id = ?').bind(participantId, beerId);
 }

@@ -134,3 +134,6 @@ figure.viz figcaption p { margin: 2px 0 0; }
 .stat-tiles .sub { font-size: 0.8rem; color: var(--muted); }
 .beer-note { white-space: pre-line; font-style: italic; color: var(--muted); font-size: 0.9rem; margin: 8px 0 0; }
 .beer-desc { color: var(--muted); font-size: 0.9rem; margin: 8px 0 0; }
+.comments { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
+.comments li { border-left: 3px solid var(--line); padding-left: 10px; font-size: 0.9rem; }
+.comments p { white-space: pre-line; margin: 2px 0 0; overflow-wrap: anywhere; }

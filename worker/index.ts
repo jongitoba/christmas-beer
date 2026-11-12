@@ -6,7 +6,7 @@
  * The results of revealed years are public (PUBLIC_ROUTES, Jon's decision). Every other
  * API route except login needs a valid session cookie (worker/session.ts).
  *
- * Visibility: before a tasting is revealed you only see your own scores (plus how many
+ * Visibility: before a tasting is revealed you only see your own scores and comments (plus how many
  * people have rated each beer). After the admin reveals it, everyone sees all scores.
  * Revealed tastings are locked: no new beers or scores until the admin hides them again.
  *
@@ -79,6 +79,22 @@ const cleanText = (value: unknown, field: string, max: number, required = true):
   return text;
 };
 
+const MAX_COMMENT = 500;
+
+/** A comment keeps its line breaks (at most one blank line in a row); other whitespace is tidied. */
+const cleanComment = (value: unknown): string => {
+  if (typeof value !== 'string') throw new HttpError(400, 'Kommentaren må være tekst');
+  const text = value
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (text.length > MAX_COMMENT) throw new HttpError(400, `Kommentaren kan være maks ${MAX_COMMENT} tegn`);
+  return text;
+};
+
 function beerInput(body: Record<string, unknown>): db.BeerInput {
   let abv: number | null = null;
   if (body.abv !== undefined && body.abv !== null && body.abv !== '') {
@@ -136,10 +152,11 @@ const meResponse = (session: Session, me: db.Participant | null) =>
 async function tastingView(ctx: Ctx, year: number) {
   const tasting = year === currentYear() ? await thisYearsTasting(ctx.env) : await db.getTasting(ctx.env.DB, year);
   if (!tasting) throw new HttpError(404, 'Fant ingen smaking for ' + year);
-  const [participants, beers, ratings] = await Promise.all([
+  const [participants, beers, ratings, comments] = await Promise.all([
     db.listParticipants(ctx.env.DB, year),
     db.listBeers(ctx.env.DB, year),
     db.listRatings(ctx.env.DB, year),
+    db.listComments(ctx.env.DB, year),
   ]);
   const meId = ctx.me?.year === year ? ctx.me.id : null;
   const names = new Map(participants.map((p) => [p.id, p.name]));
@@ -170,18 +187,21 @@ async function tastingView(ctx: Ctx, year: number) {
         note: b.note,
         raterCount: new Set(ratings.filter((r) => r.beerId === b.id).map((r) => r.participantId)).size,
         mine,
+        // Only your own comment; other people's stay hidden like their scores.
+        myComment: (meId && comments.find((c) => c.participantId === meId && c.beerId === b.id)?.text) || '',
       };
     }),
   };
 }
 
-/** Full results for one revealed year: ranking, averages and everyone's scores. */
+/** Full results for one revealed year: ranking, averages and everyone's scores and comments. */
 async function yearResults(env: Env, tasting: db.Tasting) {
   const year = tasting.year;
-  const [participants, beers, ratings] = await Promise.all([
+  const [participants, beers, ratings, comments] = await Promise.all([
     db.listParticipants(env.DB, year),
     db.listBeers(env.DB, year),
     db.listRatings(env.DB, year),
+    db.listComments(env.DB, year),
   ]);
   const names = new Map(participants.map((p) => [p.id, p.name]));
   const beerById = new Map(beers.map((b) => [b.id, b]));
@@ -215,6 +235,10 @@ async function yearResults(env: Env, tasting: db.Tasting) {
             for (const r of ratings) if (r.beerId === s.beerId && r.participantId === pid) scores[r.criterion] = r.milli / 1000;
             return { participant: names.get(pid) ?? '?', scores };
           })
+          .sort((a, b) => a.participant.localeCompare(b.participant, 'nb')),
+        comments: comments
+          .filter((c) => c.beerId === s.beerId)
+          .map((c) => ({ participant: names.get(c.participantId) ?? '?', text: c.text }))
           .sort((a, b) => a.participant.localeCompare(b.participant, 'nb')),
       };
     }),
@@ -251,7 +275,7 @@ async function history(env: Env) {
       criteria: r.criteria,
       scoreAverage: scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null,
       people,
-      beers: r.ranking.map(({ ratings: _, ...beer }) => beer),
+      beers: r.ranking.map(({ ratings: _, comments: __, ...beer }) => beer),
     });
   }
   return { years: out };
@@ -320,7 +344,9 @@ async function route(ctx: Ctx): Promise<Response> {
     if (!beer || beer.year !== me.year) throw new HttpError(404, 'Fant ikke ølet');
     const body = await readBody(request);
     const tasting = await requireOpenTasting(env, beer.year);
-    const input = body.scores;
+    // Scores, a comment, or both. A comment on its own is fine.
+    const comment = body.comment === undefined ? undefined : cleanComment(body.comment);
+    const input = body.scores ?? (comment !== undefined ? {} : undefined);
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new HttpError(400, 'Mangler karakterer');
     const keys = new Set(tasting.criteria.map((c) => c.key));
     const scores: Record<string, number | null> = {};
@@ -332,7 +358,7 @@ async function route(ctx: Ctx): Promise<Response> {
         throw new HttpError(400, `${tasting.criteria.find((c) => c.key === key)!.label}: ${(e as Error).message}`);
       }
     }
-    await db.saveRatings(env.DB, me.id, beer.id, scores);
+    await db.saveRatings(env.DB, me.id, beer.id, scores, comment);
     return json({ ok: true });
   }
 

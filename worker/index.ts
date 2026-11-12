@@ -178,9 +178,11 @@ async function tastingView(ctx: Ctx, year: number) {
     revealed: tasting.revealed,
     criteria: tasting.criteria,
     me: meId,
-    // Progress only: how many beers each person has fully scored. No scores.
+    // Progress only: how many beers each person has fully scored. No scores. Everyone on
+    // the year's name list is included; `joined` tells who has actually picked their name.
     participants: participants.map((p) => ({
       ...publicParticipant(p),
+      joined: p.joined,
       completed: beers.filter((b) => scoresBy(p.id, b.id).length === criteriaCount).length,
     })),
     beers: beers.map((b) => {
@@ -311,6 +313,7 @@ async function route(ctx: Ctx): Promise<Response> {
     } else {
       participant = await db.findOrCreateParticipant(env.DB, year, cleanText(body.name, 'Navn', 40));
     }
+    if (!participant.joined) await db.markJoined(env.DB, participant.id);
     const session = { ...ctx.session, participantId: participant.id };
     const token = await signSession(session, env.SESSION_SECRET!);
     return json(meResponse(session, participant), 200, { 'set-cookie': sessionCookie(token) });
@@ -428,6 +431,11 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
     if (session.participantId) {
       const p = await db.getParticipant(env.DB, session.participantId);
       if (p && p.year === currentYear()) me = p;
+    }
+    // Sessions from before joined_at existed already picked a name, which is what joining means.
+    if (me && !me.joined) {
+      await db.markJoined(env.DB, me.id);
+      me = { ...me, joined: true };
     }
     return await route({ request, env, url, session, me });
   } catch (e) {

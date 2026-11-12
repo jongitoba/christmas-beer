@@ -1,12 +1,10 @@
 /**
- * Temporary hard-coded placeholder codes, chosen by Jon. A GROUP_CODE or ADMIN_CODE
- * Secret overrides each one. SESSION_SECRET is still a required Secret.
+ * Constants for the Worker. They live here, not in worker/index.ts: the Workers runtime
+ * treats every non-function export of the entry file as an entrypoint and refuses to
+ * start on a non-function export.
  *
- * Lives here, not in worker/index.ts: the Workers runtime treats every non-function
- * export of the entry file as an entrypoint and refuses to start on a string export.
+ * The login codes are NOT here: GROUP_CODE and ADMIN_CODE are Cloudflare Secrets.
  */
-export const DEFAULT_GROUP_CODE = 'password';
-export const DEFAULT_ADMIN_CODE = 'password-admin';
 
 /**
  * People listed to choose from when a new year's tasting is created.

@@ -17,10 +17,8 @@ import { join } from 'node:path';
 const remote = process.env.BASE_URL;
 const PORT = 8798;
 const BASE = remote ?? `http://127.0.0.1:${PORT}`;
-// No GROUP_CODE var: this tests the hard-coded default group code.
-const GROUP_CODE = 'password';
-// No ADMIN_CODE var either: this tests the hard-coded default admin code.
-const ADMIN_CODE = 'password-admin';
+const GROUP_CODE = 'e2e-group-code';
+const ADMIN_CODE = 'e2e-admin-code';
 
 let server;
 let stateDir;
@@ -30,6 +28,8 @@ if (!remote) {
     'wrangler', 'dev',
     '--port', String(PORT), '--ip', '127.0.0.1',
     '--persist-to', stateDir,
+    '--var', `GROUP_CODE:${GROUP_CODE}`,
+    '--var', `ADMIN_CODE:${ADMIN_CODE}`,
     '--var', 'SESSION_SECRET:e2e-session-secret-that-is-long-enough',
     '--show-interactive-dev-session=false',
   ], { stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32' });
@@ -92,6 +92,9 @@ try {
   const forged = await fetch(BASE + '/api/tasting', { headers: { cookie: '__Host-juleol=eyJyb2xlIjoiYWRtaW4ifQ.AAAA' } });
   check('forged session cookie is blocked', forged.status === 401, String(forged.status));
   check('wrong code is rejected', (await anon('POST', '/api/login', { code: 'gjett' })).status === 401);
+  for (const code of ['password', 'password-admin']) {
+    check(`old placeholder code "${code}" is rejected`, (await anon('POST', '/api/login', { code })).status === 401);
+  }
 
   // URL tricks must not reach data by sneaking past run_worker_first.
   for (const path of ['/%61pi/tasting', '//api/tasting', '/./api/tasting', '/x/../api/tasting', '/API/tasting', '/api%2Ftasting', '/api/tasting/']) {

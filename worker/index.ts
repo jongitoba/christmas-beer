@@ -16,15 +16,14 @@ import {
   SESSION_COOKIE, type Session,
 } from './session.ts';
 import * as db from './db.ts';
-import { DEFAULT_ADMIN_CODE, DEFAULT_GROUP_CODE, DEFAULT_PARTICIPANTS } from './config.ts';
+import { DEFAULT_PARTICIPANTS } from './config.ts';
 import { rank, summarize, toMilli } from '../src/lib/score.ts';
 
 export interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
-  /** Optional: overrides DEFAULT_GROUP_CODE. */
+  // Secrets. Without all three the API answers 500 (fail closed).
   GROUP_CODE?: string;
-  /** Optional: overrides DEFAULT_ADMIN_CODE. */
   ADMIN_CODE?: string;
   SESSION_SECRET?: string;
 }
@@ -50,14 +49,11 @@ const json = (data: unknown, status = 200, headers: Record<string, string> = {})
 export const currentYear = (now = new Date()) =>
   Number(new Intl.DateTimeFormat('en', { timeZone: 'Europe/Oslo', year: 'numeric' }).format(now));
 
-const groupCode = (env: Env) => env.GROUP_CODE || DEFAULT_GROUP_CODE;
-const adminCode = (env: Env) => env.ADMIN_CODE || DEFAULT_ADMIN_CODE;
-
 /** This year's tasting, created with the default participants the first time it is needed. */
 const thisYearsTasting = (env: Env) => db.ensureTasting(env.DB, currentYear(), DEFAULT_PARTICIPANTS);
 
 const configOk = (env: Env) =>
-  Boolean(env.DB && env.SESSION_SECRET && env.SESSION_SECRET.length >= 32 && groupCode(env) !== adminCode(env));
+  Boolean(env.DB && env.GROUP_CODE && env.ADMIN_CODE && env.GROUP_CODE !== env.ADMIN_CODE && env.SESSION_SECRET && env.SESSION_SECRET.length >= 32);
 
 const sameOrigin = (request: Request) => {
   const origin = request.headers.get('origin');
@@ -325,7 +321,7 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
       const body = await readBody(request);
       const code = typeof body.code === 'string' ? body.code.trim() : '';
       // Check both codes every time, so timing does not reveal which one matched.
-      const [isAdmin, isMember] = await Promise.all([safeEqual(code, adminCode(env)), safeEqual(code, groupCode(env))]);
+      const [isAdmin, isMember] = await Promise.all([safeEqual(code, env.ADMIN_CODE!), safeEqual(code, env.GROUP_CODE!)]);
       if (!isAdmin && !isMember) return json({ error: 'Feil kode' }, 401);
       const token = await signSession(newSession(isAdmin ? 'admin' : 'member'), env.SESSION_SECRET!);
       return json({ ok: true }, 200, { 'set-cookie': sessionCookie(token) });

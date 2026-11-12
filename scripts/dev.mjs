@@ -9,7 +9,7 @@
  * right away (Astro HMR). Changes in worker/ or src/lib/ rebuild the Worker
  * automatically; the next API call uses the new code. No restart needed.
  *
- * Log in with "password" (members) or "password-admin" (admin), hard-coded in worker/config.ts.
+ * Log in with GROUP_CODE (members) or ADMIN_CODE (admin) from .dev.vars.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, copyFileSync } from 'node:fs';

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import worker, { currentYear, type Env } from '../worker/index.ts';
-import { DEFAULT_ADMIN_CODE, DEFAULT_GROUP_CODE, DEFAULT_PARTICIPANTS } from '../worker/config.ts';
+import { DEFAULT_PARTICIPANTS } from '../worker/config.ts';
 import { newSession, signSession, SESSION_COOKIE } from '../worker/session.ts';
 import { createTestDb } from './helpers/fake-d1.ts';
 
@@ -52,33 +52,19 @@ function client(env: Env) {
 const scores = (u: number, l: number, r: number, f: number, s: number, w: number) => ({ utseende: u, lyd: l, rase: r, fylde: f, smak: s, wok: w });
 
 test('missing or weak config fails closed (500)', async () => {
-  for (const o of [{ SESSION_SECRET: undefined }, { SESSION_SECRET: 'short' }, { ADMIN_CODE: 'jul' }, { DB: undefined as unknown as D1Database }]) {
+  for (const o of [
+    { GROUP_CODE: undefined }, { GROUP_CODE: '' }, { ADMIN_CODE: undefined }, { ADMIN_CODE: '' }, { ADMIN_CODE: 'jul' },
+    { SESSION_SECRET: undefined }, { SESSION_SECRET: 'short' }, { DB: undefined as unknown as D1Database },
+  ]) {
     const res = await client(makeEnv(o)).call('POST', '/api/login', { code: 'jul' });
     assert.equal(res.status, 500, JSON.stringify(o));
   }
 });
 
-test('without a GROUP_CODE secret the hard-coded "password" is the group code', async () => {
-  assert.equal(DEFAULT_GROUP_CODE, 'password');
-  const env = makeEnv({ GROUP_CODE: undefined });
-  const c = client(env);
-  assert.equal((await c.call('POST', '/api/login', { code: 'jul' })).status, 401);
-  assert.equal((await c.call('POST', '/api/login', { code: 'password' })).status, 200);
-  assert.equal((await c.call('GET', '/api/me')).body.role, 'member');
-  // The admin code cannot be the same as the default group code.
-  assert.equal((await client(makeEnv({ GROUP_CODE: undefined, ADMIN_CODE: 'password' })).call('POST', '/api/login', { code: 'password' })).status, 500);
-  // A GROUP_CODE secret replaces the default.
-  assert.equal((await client(makeEnv({ GROUP_CODE: 'jul' })).call('POST', '/api/login', { code: 'password' })).status, 401);
-});
-
-test('without an ADMIN_CODE secret the hard-coded "password-admin" is the admin code', async () => {
-  assert.equal(DEFAULT_ADMIN_CODE, 'password-admin');
-  const c = client(makeEnv({ GROUP_CODE: undefined, ADMIN_CODE: undefined }));
-  assert.equal((await c.call('POST', '/api/login', { code: 'nisse' })).status, 401);
-  assert.equal((await c.call('POST', '/api/login', { code: 'password-admin' })).status, 200);
-  assert.equal((await c.call('GET', '/api/me')).body.role, 'admin');
-  // An ADMIN_CODE secret replaces the default.
-  assert.equal((await client(makeEnv({ ADMIN_CODE: 'nisse' })).call('POST', '/api/login', { code: 'password-admin' })).status, 401);
+test('there are no built-in codes: the old placeholders do not log anyone in', async () => {
+  for (const code of ['password', 'password-admin']) {
+    assert.equal((await client(makeEnv()).call('POST', '/api/login', { code })).status, 401, code);
+  }
 });
 
 test('non-API paths are served as static assets', async () => {

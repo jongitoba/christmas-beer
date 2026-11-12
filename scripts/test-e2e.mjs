@@ -17,7 +17,8 @@ import { join } from 'node:path';
 const remote = process.env.BASE_URL;
 const PORT = 8798;
 const BASE = remote ?? `http://127.0.0.1:${PORT}`;
-const GROUP_CODE = 'e2e-group-code';
+// No GROUP_CODE var: this tests the hard-coded default group code.
+const GROUP_CODE = 'password';
 const ADMIN_CODE = 'e2e-admin-code';
 
 let server;
@@ -28,7 +29,6 @@ if (!remote) {
     'wrangler', 'dev',
     '--port', String(PORT), '--ip', '127.0.0.1',
     '--persist-to', stateDir,
-    '--var', `GROUP_CODE:${GROUP_CODE}`,
     '--var', `ADMIN_CODE:${ADMIN_CODE}`,
     '--var', 'SESSION_SECRET:e2e-session-secret-that-is-long-enough',
     '--show-interactive-dev-session=false',

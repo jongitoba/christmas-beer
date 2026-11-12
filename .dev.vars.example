@@ -1,5 +1,4 @@
 # Copied to .dev.vars (gitignored) by `npm run dev` on first run.
 # Local-only values. Production values are Cloudflare Secrets, never in the repo.
-GROUP_CODE=jul
 ADMIN_CODE=nisse
 SESSION_SECRET=local-dev-session-secret-at-least-32-chars

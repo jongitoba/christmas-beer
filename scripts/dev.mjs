@@ -5,9 +5,13 @@
  *
  *   npm run dev            → http://localhost:4321
  *
- * Log in with the codes in .dev.vars (GROUP_CODE for members, ADMIN_CODE for admin).
+ * Hot reload: changes in src/pages, src/client and src/styles show up in the browser
+ * right away (Astro HMR). Changes in worker/ or src/lib/ rebuild the Worker
+ * automatically; the next API call uses the new code. No restart needed.
+ *
+ * Log in with "password" (members, hard-coded in worker/config.ts) or ADMIN_CODE from .dev.vars (admin).
  */
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, copyFileSync } from 'node:fs';
 
 const WORKER_PORT = process.env.WORKER_DEV_PORT ?? '8787';
@@ -42,7 +46,12 @@ let stopping = false;
 function stop(code = 0) {
   if (stopping) return;
   stopping = true;
-  for (const p of processes) if (p.exitCode === null) p.kill('SIGTERM');
+  for (const p of processes) {
+    if (p.exitCode !== null) continue;
+    // On Windows npx runs through a shell, so kill the whole tree or wrangler/workerd keep running.
+    if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(p.pid), '/T', '/F'], { stdio: 'ignore' });
+    else p.kill('SIGTERM');
+  }
   setTimeout(() => process.exit(code), 500);
 }
 process.on('SIGINT', () => stop(0));

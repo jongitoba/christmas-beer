@@ -14,5 +14,5 @@ export const DEFAULT_ADMIN_CODE = 'password-admin';
  * and anyone not listed can still add their own name.
  */
 export const DEFAULT_PARTICIPANTS: readonly string[] = [
-  'John', 'Barstad', 'Mange', 'Voldæn', 'Ælen', 'Scott', 'Morten', 'Veronika', 'Kristina', 'Elise', 'Johan',
+  'John', 'Barstad', 'Mange', 'Voldæn', 'Ælen', 'Scott', 'Morten', 'Veronika', 'Kristina', 'Elise', 'Johan', 'Joakim',
 ];

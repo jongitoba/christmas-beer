@@ -76,7 +76,7 @@ import Base from '../layouts/Base.astro';
     );
     $('#revealed-notice').hidden = !locked;
     $('#add-section').hidden = locked;
-    const brought = tasting.beers.some((b) => b.broughtBy.id === me.participant!.id);
+    const brought = tasting.beers.some((b) => b.broughtBy?.id === me.participant!.id);
     $('#add-heading').textContent = brought ? 'Legg til et øl til' : 'Legg til ølet ditt';
 
     render(
@@ -110,13 +110,13 @@ import Base from '../layouts/Base.astro';
     const count = Object.keys(beer.mine).length;
     const total = tasting.criteria.length;
     const avg = ownAverage(beer.mine);
-    const canEdit = !locked && (beer.broughtBy.id === me.participant!.id || me.role === 'admin');
+    const canEdit = !locked && (beer.broughtBy?.id === me.participant!.id || me.role === 'admin');
     const isOpen = open.has(beer.id);
     const card = h('article', { className: 'card beer', 'data-beer': beer.id },
       h('div', { className: 'spread' },
         h('div', {},
           h('h3', {}, beer.name),
-          h('div', { className: 'meta' }, [beerMeta(beer), `Tatt med av ${beer.broughtBy.name}`].filter(Boolean).join(' · ')),
+          h('div', { className: 'meta' }, [beerMeta(beer), beer.broughtBy && `Tatt med av ${beer.broughtBy.name}`].filter(Boolean).join(' · ')),
           h('div', { className: 'row', style: 'margin-top: 6px' },
             h('span', { className: `chip${count === total ? ' done' : ''}` }, `Du: ${count}/${total}`),
             h('span', { className: 'chip' }, `${beer.raterCount} har vurdert`),

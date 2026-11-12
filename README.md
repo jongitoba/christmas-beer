@@ -34,6 +34,24 @@ survives restarts; delete that folder to start fresh.
 - `src/lib/score.ts` – criteria, score validation and the overall score calculation,
   shared by the Worker and the pages.
 
+## Earlier years (2021–2025)
+
+The results page has an "Alle år" view with charts across every revealed year. Earlier
+years come from the old Google spreadsheet through `scripts/import-history.mjs`:
+
+1. In Google Sheets: File → Download → Microsoft Excel (.xlsx). Keep the file outside the repo.
+2. `node scripts/import-history.mjs <file.xlsx>` prints what it found and every data fix
+   (dates Sheets made of "5.7", 0 meaning "not rated", values outside 1–11, copied
+   descriptions) and writes `.wrangler/import-history.sql` (gitignored).
+3. Open the site once so the Worker has migrated the database, then load the SQL:
+   - local: `npx wrangler d1 execute DB --local --env dev --file .wrangler/import-history.sql`
+   - production: `npx wrangler d1 execute DB --remote --file .wrangler/import-history.sql`
+
+The SQL replaces those years completely, so it is safe to run again. Overall scores are
+recomputed from everyone's scores, not taken from the sheet's "Snitt" column, which divides
+by the wrong number of people in several years. Beer names are cleaned up in `BEER_NAMES`
+in the script, so the same beer gets the same name across years.
+
 ## Cloudflare setup
 
 The Worker needs these as type **Secret** (dashboard or `npx wrangler secret put <NAME>`).

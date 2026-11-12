@@ -79,7 +79,7 @@ import Base from '../layouts/Base.astro';
               h('tbody', {}, t.beers.map((b) =>
                 h('tr', {},
                   h('td', { style: 'white-space: normal' }, b.name, h('div', { className: 'small muted' }, beerMeta(b))),
-                  h('td', {}, b.broughtBy.name),
+                  h('td', {}, b.broughtBy?.name ?? '–'),
                   h('td', { className: 'n' }, String(b.raterCount)),
                   h('td', { className: 'n' }, !t.revealed && h('button', {
                     type: 'button', className: 'link',

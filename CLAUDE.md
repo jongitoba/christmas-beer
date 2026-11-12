@@ -46,7 +46,17 @@ Domain rules that the code depends on:
 - Criteria live in `src/lib/score.ts`. Each tasting stores its own copy, so editing the
   list only affects new years.
 - Before the admin reveals a year, people only see their own scores. Revealed years
-  are locked.
+  are locked. `/api/history` and the "Alle år" charts only use revealed years.
+- A beer can be `unranked` ("utenfor konkurranse"): shown with its scores, but given no
+  place and left out of winners and all-time lists. Used for 2024's St. Arnold, which only
+  one person rated.
+- 2021–2025 were imported from the old spreadsheet (`scripts/import-history.mjs`, see
+  README). Imported beers have no "brought by" (`brought_by` is NULL). Overall scores are
+  recomputed, which changed the 2022 and 2025 winners compared with the sheet; Jon chose that.
+- Charts are plain HTML/CSS in `src/client/charts.ts` + `src/styles/charts.css`, with
+  hover/focus tooltips and a "Se tallene" table on every chart. The colors were checked for
+  color-blind separation and contrast in both themes; keep the `--viz-*` tokens if you
+  change them.
 
 If the project needs something this stack handles poorly, suggest an alternative
 and explain why before using it. Keep the suggestion short: what to use, why the

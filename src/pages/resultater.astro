@@ -4,8 +4,8 @@ import Base from '../layouts/Base.astro';
 <Base title="Resultater">
   <div class="spread">
     <h1 id="heading">Resultater</h1>
-    <div style="min-width: 110px">
-      <label for="year">År</label>
+    <div style="min-width: 120px">
+      <label for="year">Vis</label>
       <select id="year"></select>
     </div>
   </div>
@@ -13,31 +13,58 @@ import Base from '../layouts/Base.astro';
 </Base>
 
 <script>
-  import { api, ApiError, beerMeta, showAdminLink, type Me, type RankedBeer, type Results, type Tasting, type YearSummary } from '../client/api.ts';
+  import {
+    api, ApiError, beerMeta, showAdminLink,
+    type History, type HistoryYear, type Me, type RankedBeer, type Results, type Tasting, type YearSummary,
+  } from '../client/api.ts';
   import { $, h, render } from '../client/dom.ts';
+  import { bars, diverging, dotRows, figure, heatLegend, heatmap, legend, table, type BarRow } from '../client/charts.ts';
   import { formatScore, rank, summarize, type Criterion } from '../lib/score.ts';
 
+  const ALL = 'alle';
   const MEDALS = ['🥇', '🥈', '🥉'];
   const content = $('#content');
   const yearSelect = $<HTMLSelectElement>('#year');
+
+  const SCORE_AXIS = { min: 0, max: 11, ticks: [0, 2, 4, 6, 8, 10], format: (v: number) => String(v) };
+  const DOT_AXIS = { min: 1, max: 11, ticks: [1, 3, 5, 7, 9, 11], format: (v: number) => String(v) };
+  const signed = (v: number) => {
+    const r = Math.round(v * 100) / 100; // so a tiny negative never shows as "−0,00"
+    return (r > 0 ? '+' : r < 0 ? '−' : '±') + Math.abs(r).toLocaleString('nb-NO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
   async function start() {
     const me = await api<Me>('GET', '/api/me');
     showAdminLink(me);
     const years = await api<YearSummary[]>('GET', '/api/years');
-    const wanted = Number(new URLSearchParams(location.search).get('år')) || me.year;
-    if (!years.some((y) => y.year === wanted)) years.unshift({ year: wanted, revealed: false, beerCount: 0 });
-    render(yearSelect, years.map((y) => h('option', { value: y.year, selected: y.year === wanted }, String(y.year))));
+    const param = new URLSearchParams(location.search).get('år');
+    const wanted = param === ALL ? ALL : String(Number(param) || me.year);
+    if (wanted !== ALL && !years.some((y) => String(y.year) === wanted)) years.unshift({ year: Number(wanted), revealed: false, beerCount: 0 });
+    render(yearSelect,
+      h('option', { value: ALL, selected: wanted === ALL }, 'Alle år'),
+      years.map((y) => h('option', { value: y.year, selected: String(y.year) === wanted }, String(y.year))),
+    );
     yearSelect.addEventListener('change', () => {
       history.replaceState(null, '', `?år=${yearSelect.value}`);
-      show(Number(yearSelect.value));
+      show(yearSelect.value);
     });
     await show(wanted);
   }
 
-  async function show(year: number) {
-    $('#heading').textContent = `Resultater ${year}`;
+  async function show(value: string) {
     render(content, h('p', { className: 'muted' }, 'Laster …'));
+    if (value === ALL) {
+      $('#heading').textContent = 'Alle år';
+      try {
+        drawHistory(await api<History>('GET', '/api/history'));
+      } catch (e) {
+        render(content, h('p', { className: 'error' }, (e as Error).message));
+      }
+      return;
+    }
+    const year = Number(value);
+    $('#heading').textContent = `Resultater ${year}`;
     try {
       drawResults(await api<Results>('GET', `/api/results?year=${year}`));
     } catch (e) {
@@ -46,6 +73,8 @@ import Base from '../layouts/Base.astro';
       render(content, h('p', { className: 'error' }, (e as Error).message));
     }
   }
+
+  // ------------------------------------------------------------------ a year that is not revealed
 
   /** Before the reveal: your own ranking only. */
   async function drawHidden(year: number) {
@@ -62,7 +91,8 @@ import Base from '../layouts/Base.astro';
       : [];
     const beerName = (id: number) => tasting!.beers.find((b) => b.id === id)!.name;
     render(content,
-      h('div', { className: 'notice' }, '🤫 Resultatene er hemmelige til de blir avslørt. Her ser du bare din egen rangering.'),
+      h('div', { className: 'notice' }, '🤫 Resultatene er hemmelige til de blir avslørt. Her ser du bare din egen rangering. ',
+        h('a', { href: `?år=${ALL}` }, 'Se tidligere år →')),
       mine.length
         ? h('div', { className: 'card' },
             h('h2', { style: 'margin-top: 0' }, 'Din rangering så langt'),
@@ -74,14 +104,17 @@ import Base from '../layouts/Base.astro';
     );
   }
 
+  // ------------------------------------------------------------------ one revealed year
+
   function drawResults(results: Results) {
     const { ranking, criteria } = results;
     if (!ranking.length) return render(content, h('p', { className: 'muted' }, 'Ingen øl ble registrert dette året.'));
 
     const list = h('div', { className: 'stack' }, ranking.map((r) => resultCard(r, criteria)));
+    const charts = h('div', { className: 'stack' }, rankingChart(ranking), criteriaChart(ranking, criteria));
     // Presentation mode: hide everything, then reveal from last place to first, one tap at a time.
     let hiddenFrom = 0;
-    const scored = ranking.filter((r) => r.overall != null).length;
+    const scored = ranking.filter((r) => r.place != null).length;
     const nextButton = h('button', { type: 'button', hidden: true }, 'Vis neste');
     const startButton = h('button', { type: 'button', className: 'ghost' }, '🎁 Avslør én og én');
     const cards = [...list.children] as HTMLElement[];
@@ -89,6 +122,7 @@ import Base from '../layouts/Base.astro';
     const apply = () => {
       // Hide anything that would spoil the order while revealing.
       winners.hidden = hiddenFrom > 0;
+      charts.hidden = hiddenFrom > 0;
       startButton.hidden = hiddenFrom > 0;
       cards.forEach((c, i) => c.classList.toggle('hidden-result', i < hiddenFrom));
       nextButton.hidden = hiddenFrom === 0;
@@ -107,10 +141,46 @@ import Base from '../layouts/Base.astro';
 
     render(content,
       h('div', { className: 'row' }, startButton),
+      charts,
       list,
       h('div', { className: 'row', style: 'position: sticky; bottom: 16px; justify-content: center' }, nextButton),
       winners,
     );
+  }
+
+  function rankingChart(ranking: RankedBeer[]) {
+    const scored = ranking.filter((r) => r.place != null);
+    return figure({
+      title: 'Totalscore',
+      subtitle: 'Snittet av kriteriene, fra 1 til 11.',
+      chart: bars(scored.map((r) => ({
+        label: `${r.place}. ${r.beer.name}`,
+        value: r.overall!,
+        valueLabel: formatScore(r.overall),
+        accent: r.place === 1,
+        tip: { value: formatScore(r.overall), lines: [r.beer.name, `Plass ${r.place}`, plural(r.raterCount, 'stemme', 'stemmer')] },
+      })), SCORE_AXIS),
+      legend: legend([{ label: 'Vinner', kind: 'bar', color: '--viz-2' }, { label: 'Andre øl', kind: 'bar', color: '--viz-1' }]),
+      table: table(['Plass', 'Øl', 'Totalscore'], scored.map((r) => [r.place!, r.beer.name, formatScore(r.overall)]), [true, false, true]),
+    });
+  }
+
+  function criteriaChart(ranking: RankedBeer[], criteria: Criterion[]) {
+    const scored = ranking.filter((r) => r.overall != null);
+    return figure({
+      title: 'Kriteriene',
+      subtitle: 'Snittkarakter per kriterium.',
+      legend: heatLegend('1', '11'),
+      chart: heatmap({
+        rows: scored.map((r) => (r.beer.unranked ? `${r.beer.name} (utenfor konkurranse)` : r.beer.name)),
+        columns: criteria.map((c) => c.label),
+        values: scored.map((r) => criteria.map((c) => r.criteria[c.key] ?? null)),
+        min: 1, max: 11,
+        format: (v) => v.toLocaleString('nb-NO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+        tip: (i, j) => ({ value: formatScore(scored[i]!.criteria[criteria[j]!.key]), lines: [scored[i]!.beer.name, criteria[j]!.label] }),
+      }),
+      table: table(['Øl', ...criteria.map((c) => c.label)], scored.map((r) => [r.beer.name, ...criteria.map((c) => formatScore(r.criteria[c.key]))]), [false, ...criteria.map(() => true)]),
+    });
   }
 
   function resultCard(r: RankedBeer, criteria: Criterion[]) {
@@ -120,13 +190,16 @@ import Base from '../layouts/Base.astro';
         h('div', { className: 'place', 'aria-label': r.place ? `Plass ${r.place}` : 'Ingen karakterer' }, medal),
         h('div', { style: 'flex: 1; min-width: 0' },
           h('h3', {}, r.beer.name),
-          h('div', { className: 'small muted' }, [beerMeta(r.beer), `Tatt med av ${r.beer.broughtBy}`].filter(Boolean).join(' · ')),
+          h('div', { className: 'small muted' }, [beerMeta(r.beer), r.beer.broughtBy && `Tatt med av ${r.beer.broughtBy}`].filter(Boolean).join(' · ')),
         ),
         h('div', {},
           h('div', { className: 'overall' }, formatScore(r.overall)),
-          h('div', { className: 'small muted', style: 'text-align: right' }, `${r.raterCount} ${r.raterCount === 1 ? 'stemme' : 'stemmer'}`),
+          h('div', { className: 'small muted', style: 'text-align: right' }, plural(r.raterCount, 'stemme', 'stemmer')),
+          r.beer.unranked && h('div', { className: 'small muted', style: 'text-align: right' }, 'Utenfor konkurranse'),
         ),
       ),
+      r.beer.description && h('p', { className: 'beer-desc' }, r.beer.description),
+      r.beer.note && h('p', { className: 'beer-note' }, r.beer.note),
       h('div', { className: 'criteria-grid' }, criteria.map((c) =>
         h('div', {}, h('div', { className: 'k' }, c.label), h('div', { className: 'v' }, formatScore(r.criteria[c.key]))))),
       r.ratings.length > 0 && h('details', {},
@@ -142,8 +215,9 @@ import Base from '../layouts/Base.astro';
     );
   }
 
-  /** The best beer on each criterion. */
-  function categoryWinners(ranking: RankedBeer[], criteria: Criterion[]) {
+  /** The best beer on each criterion (ranked beers only). */
+  function categoryWinners(all: RankedBeer[], criteria: Criterion[]) {
+    const ranking = all.filter((r) => r.place != null);
     const rows = criteria.map((c) => {
       const best = Math.max(...ranking.map((r) => r.criteria[c.key] ?? -Infinity));
       if (!Number.isFinite(best)) return null;
@@ -155,6 +229,213 @@ import Base from '../layouts/Base.astro';
       h('div', { className: 'table-scroll', style: 'margin-top: 0' },
         h('table', {}, h('tbody', {}, rows))),
     );
+  }
+
+  // ------------------------------------------------------------------ all years
+
+  type Beer = HistoryYear['beers'][number] & { year: number };
+
+  function drawHistory({ years }: History) {
+    if (!years.length) return render(content, h('p', { className: 'muted' }, 'Ingen år er avslørt ennå.'));
+    // Only ranked beers: unranked ones (rated by one person) would skew the all-time lists.
+    const all: Beer[] = years.flatMap((y) => y.beers.filter((b) => b.place != null).map((b) => ({ ...b, year: y.year })));
+    const byScore = [...all].sort((a, b) => b.overall! - a.overall!);
+    const best = byScore[0]!;
+    const scoreCount = years.reduce((n, y) => n + y.people.reduce((m, p) => m + p.scoreCount, 0), 0);
+    const first = years[0]!.year;
+    const last = years[years.length - 1]!.year;
+
+    render(content,
+      h('div', { className: 'stat-tiles' },
+        tile('År', String(years.length), first === last ? String(first) : `${first}–${last}`),
+        tile('Øl smakt', String(all.length), `${new Set(all.map((b) => b.beer.name.toLowerCase())).size} forskjellige`),
+        tile('Karakterer gitt', scoreCount.toLocaleString('nb-NO'), 'av alle, på alle kriterier'),
+        tile('Beste øl noensinne', best.beer.name, `${formatScore(best.overall)} i ${best.year}`),
+      ),
+      winnersChart(years),
+      spreadChart(years),
+      topChart('Topp 10 gjennom tidene', 'Høyest totalscore, alle år.', byScore.slice(0, 10)),
+      topChart('Bunn 5 gjennom tidene', 'Lavest totalscore, alle år. Beklager.', byScore.slice(-5).reverse()),
+      repeatsChart(all),
+      raterChart(years),
+      broughtChart(all),
+      criteriaYearsChart(years),
+    );
+  }
+
+  function tile(label: string, value: string, sub: string) {
+    return h('div', { className: 'card' }, h('div', { className: 'label' }, label), h('div', { className: 'value' }, value), h('div', { className: 'sub' }, sub));
+  }
+
+  function winnersChart(years: HistoryYear[]) {
+    const rows = years.map((y) => ({ y, w: y.beers.find((b) => b.place === 1) })).filter((x) => x.w).reverse();
+    return figure({
+      title: 'Årets vinner',
+      chart: bars(rows.map(({ y, w }) => ({
+        label: String(y.year),
+        sublabel: w!.beer.name,
+        value: w!.overall!,
+        valueLabel: formatScore(w!.overall),
+        tip: { value: formatScore(w!.overall), lines: [`${w!.beer.name}`, `Vinner ${y.year}`] },
+      })), SCORE_AXIS),
+      table: table(['År', 'Vinner', 'Totalscore'], rows.map(({ y, w }) => [y.year, w!.beer.name, formatScore(w!.overall)]), [true, false, true]),
+    });
+  }
+
+  function spreadChart(years: HistoryYear[]) {
+    const rows = [...years].reverse();
+    return figure({
+      title: 'Alle øl, år for år',
+      subtitle: 'Hver prikk er ett øl. Streken går fra dårligste til beste.',
+      legend: legend([{ label: 'Vinner', kind: 'dot', color: '--viz-2' }, { label: 'Andre øl', kind: 'dot', color: '--viz-1' }]),
+      chart: dotRows(rows.map((y) => {
+        const scored = y.beers.filter((b) => b.place != null);
+        const avg = scored.reduce((s, b) => s + b.overall!, 0) / scored.length;
+        return {
+          label: String(y.year),
+          sublabel: `snitt ${formatScore(avg)}`,
+          dots: scored.map((b) => ({
+            value: b.overall!,
+            accent: b.place === 1,
+            tip: { value: formatScore(b.overall), lines: [b.beer.name, `Plass ${b.place} i ${y.year}`] },
+          })),
+        };
+      }), DOT_AXIS),
+      table: table(['År', 'Øl', 'Snitt', 'Beste', 'Dårligste'], rows.map((y) => {
+        const s = y.beers.filter((b) => b.place != null).map((b) => b.overall!);
+        return [y.year, s.length, formatScore(s.reduce((a, b) => a + b, 0) / s.length), formatScore(Math.max(...s)), formatScore(Math.min(...s))];
+      }), [true, true, true, true, true]),
+    });
+  }
+
+  function topChart(title: string, subtitle: string, beers: Beer[]) {
+    return figure({
+      title,
+      subtitle,
+      chart: bars(beers.map((b): BarRow => ({
+        label: b.beer.name,
+        sublabel: String(b.year),
+        value: b.overall!,
+        valueLabel: formatScore(b.overall),
+        tip: { value: formatScore(b.overall), lines: [b.beer.name, `${b.year}, plass ${b.place}`] },
+      })), SCORE_AXIS),
+      table: table(['Øl', 'År', 'Totalscore'], beers.map((b) => [b.beer.name, b.year, formatScore(b.overall)]), [false, true, true]),
+    });
+  }
+
+  /** Beers that were tasted in more than one year. */
+  function repeatsChart(all: Beer[]) {
+    const groups = new Map<string, Beer[]>();
+    for (const b of all) {
+      const key = b.beer.name.toLowerCase();
+      groups.set(key, [...(groups.get(key) ?? []), b]);
+    }
+    const repeats = [...groups.values()].filter((g) => new Set(g.map((b) => b.year)).size > 1)
+      .map((g) => g.sort((a, b) => a.year - b.year))
+      .sort((a, b) => b.length - a.length || a[0]!.beer.name.localeCompare(b[0]!.beer.name, 'nb'));
+    if (!repeats.length) return null;
+    return figure({
+      title: 'Øl som har vært med flere ganger',
+      subtitle: 'Samme øl, forskjellige år. Har det blitt bedre eller dårligere?',
+      chart: dotRows(repeats.map((g) => ({
+        label: g[0]!.beer.name,
+        // Years go in the label: printed under the dots they collide when two scores are close.
+        sublabel: g.map((b) => `${b.year}: ${formatScore(b.overall)}`).join(' · '),
+        dots: g.map((b, i) => ({
+          value: b.overall!,
+          accent: i === g.length - 1,
+          tip: { value: formatScore(b.overall), lines: [b.beer.name, `${b.year}, plass ${b.place}`] },
+        })),
+      })), DOT_AXIS),
+      legend: legend([{ label: 'Siste gang', kind: 'dot', color: '--viz-2' }, { label: 'Tidligere', kind: 'dot', color: '--viz-1' }]),
+      table: table(['Øl', 'År', 'Totalscore'], repeats.flatMap((g) => g.map((b) => [b.beer.name, b.year, formatScore(b.overall)])), [false, true, true]),
+    });
+  }
+
+  /** Who gives higher or lower scores than the others did the same year. */
+  function raterChart(years: HistoryYear[]) {
+    const people = new Map<string, { sum: number; count: number; given: number; years: number[] }>();
+    for (const y of years) {
+      if (y.scoreAverage == null) continue;
+      for (const p of y.people) {
+        if (p.average == null) continue;
+        const e = people.get(p.name) ?? { sum: 0, count: 0, given: 0, years: [] };
+        // Weighted by how many scores they gave, compared with everyone that year.
+        e.sum += (p.average - y.scoreAverage) * p.scoreCount;
+        e.count += p.scoreCount;
+        e.given += p.average * p.scoreCount;
+        e.years.push(y.year);
+        people.set(p.name, e);
+      }
+    }
+    const rows = [...people.entries()].map(([name, e]) => ({ name, delta: e.sum / e.count, avg: e.given / e.count, ...e })).sort((a, b) => b.delta - a.delta);
+    if (!rows.length) return null;
+    const limit = Math.max(0.5, Math.ceil(Math.max(...rows.map((r) => Math.abs(r.delta))) * 2) / 2);
+    const ticks = [-limit, -limit / 2, 0, limit / 2, limit];
+    return figure({
+      title: 'Hvem er snillest?',
+      subtitle: 'Hvor mye høyere eller lavere hver person gir enn snittet av alle samme år.',
+      legend: legend([{ label: 'Gir høyere', kind: 'bar', color: '--viz-pos' }, { label: 'Gir lavere', kind: 'bar', color: '--viz-neg' }]),
+      chart: diverging(rows.map((r) => ({
+        label: r.name,
+        sublabel: plural(r.years.length, 'år', 'år'),
+        value: r.delta,
+        valueLabel: signed(r.delta),
+        tip: { value: `${signed(r.delta)} mot snittet`, lines: [r.name, `Gir i snitt ${formatScore(r.avg)}`, `${r.count} karakterer`, `År: ${r.years.join(', ')}`] },
+      })), { limit, ticks, format: (v) => (v === 0 ? '0' : signed(v)) }),
+      table: table(['Hvem', 'Mot snittet', 'Gir i snitt', 'Karakterer', 'År'], rows.map((r) => [r.name, signed(r.delta), formatScore(r.avg), r.count, r.years.join(', ')]), [false, true, true, true, false]),
+    });
+  }
+
+  /** Only for years where the app knows who brought what. */
+  function broughtChart(all: Beer[]) {
+    const people = new Map<string, Beer[]>();
+    for (const b of all) if (b.beer.broughtBy) people.set(b.beer.broughtBy, [...(people.get(b.beer.broughtBy) ?? []), b]);
+    if (!people.size) return null;
+    const rows = [...people.entries()].map(([name, beers]) => ({ name, beers, avg: beers.reduce((s, b) => s + b.overall!, 0) / beers.length })).sort((a, b) => b.avg - a.avg);
+    return figure({
+      title: 'Beste ølvelger',
+      subtitle: 'Snittet av totalscoren til ølene hver person har tatt med.',
+      chart: bars(rows.map((r, i) => ({
+        label: r.name,
+        sublabel: plural(r.beers.length, 'øl', 'øl'),
+        value: r.avg,
+        valueLabel: formatScore(r.avg),
+        accent: i === 0,
+        tip: { value: formatScore(r.avg), lines: [r.name, ...r.beers.map((b) => `${b.year}: ${b.beer.name} (${formatScore(b.overall)})`)] },
+      })), SCORE_AXIS),
+      table: table(['Hvem', 'Øl', 'Snitt'], rows.map((r) => [r.name, r.beers.map((b) => `${b.beer.name} (${b.year})`).join(', '), formatScore(r.avg)]), [false, false, true]),
+    });
+  }
+
+  function criteriaYearsChart(years: HistoryYear[]) {
+    const keys: Criterion[] = [];
+    for (const y of years) for (const c of y.criteria) if (!keys.some((k) => k.key === c.key)) keys.push(c);
+    const rows = [...years].reverse();
+    const avg = (y: HistoryYear, key: string) => {
+      const v = y.beers.filter((b) => b.place != null).map((b) => b.criteria[key]).filter((x): x is number => x != null);
+      return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+    };
+    const values = rows.map((y) => keys.map((k) => avg(y, k.key)));
+    // Criteria that were added later, e.g. "Wok kom med i 2024."
+    const added = keys
+      .map((k) => ({ k, from: years.find((y) => y.criteria.some((c) => c.key === k.key))!.year }))
+      .filter((x) => x.from !== years[0]!.year)
+      .map((x) => `${x.k.label} kom med i ${x.from}.`);
+    return figure({
+      title: 'Kriteriene år for år',
+      subtitle: ['Snittkarakter per kriterium.', ...added].join(' '),
+      legend: heatLegend('1', '11'),
+      chart: heatmap({
+        rows: rows.map((y) => String(y.year)),
+        columns: keys.map((k) => k.label),
+        values,
+        min: 1, max: 11,
+        format: (v) => v.toLocaleString('nb-NO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+        tip: (i, j) => ({ value: formatScore(values[i]![j]), lines: [`${keys[j]!.label}, ${rows[i]!.year}`] }),
+      }),
+      table: table(['År', ...keys.map((k) => k.label)], rows.map((y, i) => [y.year, ...values[i]!.map((v) => formatScore(v))]), [true, ...keys.map(() => true)]),
+    });
   }
 
   start().catch((e) => render(content, h('p', { className: 'error' }, (e as Error).message)));

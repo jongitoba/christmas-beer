@@ -1,4 +1,10 @@
 ---
+// Fonts are bundled and served from our own Worker (no third-party font server).
+import '@fontsource/fraunces/700.css';
+import '@fontsource/fraunces/900.css';
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/700.css';
 import '../styles/global.css';
 import '../styles/charts.css';
 
@@ -23,7 +29,10 @@ const current = (prefix: string) => (path.startsWith(prefix) ? 'page' : undefine
   <body>
     <header class="site">
       <div class="wrap">
-        <a class="brand" href="/">Jule<span>øl</span>smaking</a>
+        <a class="brand" href="/">
+          <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><path class="hat" d="M5 18c0-6 4-11 10-11 3 0 5 1 6 3l2 5-5-1c0 2-1 4-3 4H5z" /><rect class="fur" x="3" y="17" width="16" height="4" rx="2" /><circle class="fur" cx="23.5" cy="15" r="2.5" /></svg>
+          <span class="brand-text">Jule<span>øl</span>smaking</span>
+        </a>
         <nav class="main" aria-label="Hovedmeny">
           <a href="/smaking/" aria-current={current('/smaking')}>Smaking</a>
           <a href="/resultater/" aria-current={current('/resultater')}>Resultater</a>

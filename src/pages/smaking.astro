@@ -4,6 +4,7 @@ import Base from '../layouts/Base.astro';
 <Base title="Smaking">
   <div class="spread">
     <div>
+      <p class="eyebrow">Vanntemperatur 2 °C · Øltemperatur perfekt</p>
       <h1 id="heading">Smaking</h1>
       <p class="lead" id="who"></p>
     </div>
@@ -101,8 +102,17 @@ import Base from '../layouts/Base.astro';
     const total = tasting.beers.length;
     // Only people who have picked their name this year, not everyone on the pre-filled list.
     const joined = tasting.participants.filter((p) => p.joined);
+    const done = tasting.participants.find((p) => p.id === me.participant!.id)?.completed ?? 0;
+    const left = total - done;
     render(
       $('#progress'),
+      total > 0 && h('div', { className: 'progress-me' },
+        h('div', { className: 'ring', style: `--p: ${Math.round((done / total) * 100)}%`, 'aria-hidden': 'true' }),
+        h('div', {},
+          h('strong', {}, `${done} av ${total} dukkerter`),
+          h('span', { className: 'small muted' }, left > 0 ? `${left} øl igjen før badstua` : 'Ferdig. Rett i badstua!'),
+        ),
+      ),
       joined.length
         ? h('div', { className: 'row' }, joined.map((p) =>
             h('span', { className: `chip${total && p.completed === total ? ' done' : ''}` }, `${p.name} ${p.completed}/${total}`)))
@@ -121,6 +131,7 @@ import Base from '../layouts/Base.astro';
     const card = h('article', { className: 'card beer', 'data-beer': beer.id },
       h('div', { className: 'spread' },
         h('div', {},
+          h('p', { className: 'eyebrow' }, `Dukkert nr. ${tasting.beers.indexOf(beer) + 1}`),
           h('h3', {}, beer.name),
           h('div', { className: 'meta' }, [beerMeta(beer), beer.broughtBy && `Tatt med av ${beer.broughtBy.name}`].filter(Boolean).join(' · ')),
           beer.description && h('p', { className: 'desc' }, beer.description),
@@ -205,7 +216,7 @@ import Base from '../layouts/Base.astro';
 
     const commentId = `c-${beer.id}`;
     const comment = h('textarea', {
-      id: commentId, rows: 3, maxlength: MAX_COMMENT, placeholder: 'Hva synes du om ølet?',
+      id: commentId, rows: 3, maxlength: MAX_COMMENT, placeholder: 'Hvor kaldt var den egentlig?',
       value: beer.myComment,
     });
     comment.addEventListener('input', () => (status.textContent = ''));
@@ -218,7 +229,7 @@ import Base from '../layouts/Base.astro';
       ),
       h('div', { className: 'spread', style: 'align-items: center' },
         h('div', {}, h('span', { className: 'muted small' }, 'Ditt snitt: '), preview),
-        h('div', { className: 'row' }, status, h('button', { type: 'submit' }, 'Lagre')),
+        h('div', { className: 'row' }, status, h('button', { type: 'submit' }, 'Hopp uti – lagre')),
       ),
       error,
     );

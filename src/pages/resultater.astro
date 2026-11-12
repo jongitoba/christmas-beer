@@ -136,8 +136,10 @@ import Base from '../layouts/Base.astro';
     const startButton = h('button', { type: 'button', className: 'ghost' }, '🎁 Avslør én og én');
     const cards = [...list.children] as HTMLElement[];
     const winners = categoryWinners(ranking, criteria);
+    const top = podium(ranking);
     const apply = () => {
       // Hide anything that would spoil the order while revealing.
+      if (top) top.hidden = hiddenFrom > 0;
       winners.hidden = hiddenFrom > 0;
       charts.hidden = hiddenFrom > 0;
       startButton.hidden = hiddenFrom > 0;
@@ -158,10 +160,25 @@ import Base from '../layouts/Base.astro';
 
     render(content,
       h('div', { className: 'row' }, startButton),
+      top,
       charts,
       list,
       h('div', { className: 'row', style: 'position: sticky; bottom: 16px; justify-content: center' }, nextButton),
       winners,
+    );
+  }
+
+  /** The top three ranked beers on a podium (2–1–3 visually, 1–2–3 for screen readers). Null with fewer than one. */
+  function podium(ranking: RankedBeer[]) {
+    const top = ranking.filter((r) => r.place != null).slice(0, 3);
+    if (!top.length) return null;
+    return h('section', { 'aria-labelledby': 'podium-heading' },
+      h('h2', { id: 'podium-heading', style: 'margin-top: 8px' }, 'Pallen'),
+      h('ol', { className: 'podium' }, top.map((r, i) =>
+        h('li', { className: `p${i + 1}` },
+          h('div', { className: 'who' }, r.beer.name, h('span', {}, formatScore(r.overall))),
+          h('div', { className: 'step', 'aria-label': `Plass ${r.place}` }, String(r.place)),
+        ))),
     );
   }
 

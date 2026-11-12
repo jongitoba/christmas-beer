@@ -99,12 +99,14 @@ import Base from '../layouts/Base.astro';
 
   function drawProgress() {
     const total = tasting.beers.length;
+    // Only people who have picked their name this year, not everyone on the pre-filled list.
+    const joined = tasting.participants.filter((p) => p.joined);
     render(
       $('#progress'),
-      tasting.participants.length
-        ? h('div', { className: 'row' }, tasting.participants.map((p) =>
+      joined.length
+        ? h('div', { className: 'row' }, joined.map((p) =>
             h('span', { className: `chip${total && p.completed === total ? ' done' : ''}` }, `${p.name} ${p.completed}/${total}`)))
-        : h('p', { className: 'muted' }, 'Ingen deltakere ennå.'),
+        : h('p', { className: 'muted' }, 'Ingen har meldt seg på ennå.'),
       h('p', { className: 'small muted', style: 'margin: 10px 0 0' }, 'Antall øl ferdigvurdert.'),
     );
   }

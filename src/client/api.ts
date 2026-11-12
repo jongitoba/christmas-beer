@@ -59,7 +59,8 @@ export interface Tasting {
   revealed: boolean;
   criteria: Criterion[];
   me: number | null;
-  participants: { id: number; name: string; completed: number }[];
+  /** Everyone on this year's name list; `joined` is true once they have picked their name. */
+  participants: { id: number; name: string; joined: boolean; completed: number }[];
   beers: TastingBeer[];
 }
 

@@ -389,3 +389,60 @@ test('a beer can have a short description that the owner can change', async () =
   assert.equal((await kari.call('PATCH', `/api/beers/${id}`, { name: 'Nisseøl', description: '' })).body.description, '');
   assert.equal((await ola.call('PATCH', `/api/beers/${id}`, { name: 'Nisseøl', description: 'Hacket' })).status, 403);
 });
+
+test('only people who have picked their name count as taking part this year', async () => {
+  const env = makeEnv();
+  const kari = client(env);
+  await kari.join('jul', 'Kari'); // a new name
+  const scott = client(env);
+  await scott.join('jul', 'Scott'); // one of the pre-filled names
+
+  const people = (await kari.call('GET', '/api/tasting')).body.participants as Json[];
+  assert.equal(people.length, DEFAULT_PARTICIPANTS.length + 1, 'everyone on the list is still returned');
+  assert.deepEqual(people.filter((p) => p.joined).map((p) => p.name).sort(), ['Kari', 'Scott']);
+  // The name picker still offers everyone.
+  assert.equal((await kari.call('GET', '/api/participants')).body.length, DEFAULT_PARTICIPANTS.length + 1);
+});
+
+test('a session from before joining existed is counted once it is used', async () => {
+  const env = makeEnv();
+  const c = client(env);
+  await c.call('POST', '/api/login', { code: 'jul' });
+  const list = (await c.call('GET', '/api/participants')).body as Json[];
+  const elise = list.find((p) => p.name === 'Elise')!;
+  c.setCookie(await signSession(newSession('member', elise.id), SECRET));
+  const people = (await c.call('GET', '/api/tasting')).body.participants as Json[];
+  assert.deepEqual(people.filter((p) => p.joined).map((p) => p.name), ['Elise']);
+});
+
+test('upgrading an old database marks people who already took part as joined', async () => {
+  const DB = createTestDb();
+  // The tables as they were before participants.joined_at.
+  await DB.batch([
+    `CREATE TABLE tastings (year INTEGER PRIMARY KEY, criteria TEXT NOT NULL, revealed_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+    `CREATE TABLE participants (id INTEGER PRIMARY KEY, year INTEGER NOT NULL REFERENCES tastings(year), name TEXT NOT NULL,
+       created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (year, name COLLATE NOCASE))`,
+    `CREATE TABLE beers (id INTEGER PRIMARY KEY, year INTEGER NOT NULL REFERENCES tastings(year), brought_by INTEGER REFERENCES participants(id),
+       name TEXT NOT NULL, brewery TEXT NOT NULL DEFAULT '', abv REAL, description TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+       unranked INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+    `CREATE TABLE ratings (participant_id INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+       beer_id INTEGER NOT NULL REFERENCES beers(id) ON DELETE CASCADE, criterion TEXT NOT NULL, score_milli INTEGER NOT NULL,
+       updated_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (participant_id, beer_id, criterion))`,
+    `CREATE TABLE comments (participant_id INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+       beer_id INTEGER NOT NULL REFERENCES beers(id) ON DELETE CASCADE, text TEXT NOT NULL,
+       updated_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (participant_id, beer_id))`,
+    `INSERT INTO tastings (year, criteria) VALUES (${YEAR}, '[{"key":"smak","label":"Smak"}]')`,
+    `INSERT INTO participants (id, year, name) VALUES (1, ${YEAR}, 'Rater'), (2, ${YEAR}, 'Bringer'), (3, ${YEAR}, 'Commenter'), (4, ${YEAR}, 'Absent')`,
+    `INSERT INTO beers (id, year, brought_by, name) VALUES (1, ${YEAR}, 2, 'Juleøl')`,
+    `INSERT INTO ratings (participant_id, beer_id, criterion, score_milli) VALUES (1, 1, 'smak', 7000)`,
+    `INSERT INTO comments (participant_id, beer_id, text) VALUES (3, 1, 'God')`,
+  ].map((sql) => DB.prepare(sql)));
+
+  const admin = client(makeEnv({ DB }));
+  assert.equal((await admin.call('POST', '/api/login', { code: 'nisse' })).status, 200);
+  const people = (await admin.call('GET', '/api/tasting')).body.participants as Json[];
+  assert.deepEqual(
+    Object.fromEntries(people.map((p) => [p.name, p.joined])),
+    { Absent: false, Bringer: true, Commenter: true, Rater: true },
+  );
+});

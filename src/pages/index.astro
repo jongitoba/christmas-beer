@@ -1,0 +1,102 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Juleølsmaking">
+  <h1>God jul og velkommen!</h1>
+  <p class="lead">Her rangerer vi juleølene fra årets smaking.</p>
+
+  <section id="login" class="card" hidden>
+    <form id="login-form" class="stack">
+      <div>
+        <label for="code">Kode</label>
+        <input id="code" name="code" type="password" autocomplete="current-password" required />
+      </div>
+      <button type="submit">Logg inn</button>
+      <p class="error" id="login-error" role="alert"></p>
+    </form>
+  </section>
+
+  <section id="pick" hidden>
+    <h2>Hvem er du?</h2>
+    <div class="names" id="names"></div>
+    <form id="name-form" class="card stack" style="margin-top: 16px">
+      <div>
+        <label for="new-name">Ikke på lista? Skriv navnet ditt</label>
+        <input id="new-name" name="name" maxlength="40" autocomplete="given-name" required />
+      </div>
+      <button type="submit">Det er meg</button>
+      <p class="error" id="pick-error" role="alert"></p>
+    </form>
+    <p class="small muted" style="margin-top: 24px"><button class="link" id="logout" type="button">Logg ut</button></p>
+  </section>
+</Base>
+
+<script>
+  import { api, showAdminLink, type Me } from '../client/api.ts';
+  import { $, h, render } from '../client/dom.ts';
+
+  const switching = new URLSearchParams(location.search).has('bytt');
+
+  async function start() {
+    let me: Me;
+    try {
+      me = await api<Me>('GET', '/api/me', undefined, { redirectOn401: false });
+    } catch {
+      $('#login').hidden = false;
+      $('#pick').hidden = true;
+      $('#code').focus();
+      return;
+    }
+    showAdminLink(me);
+    if (me.participant && !switching) {
+      location.replace('/smaking/');
+      return;
+    }
+    $('#login').hidden = true;
+    $('#pick').hidden = false;
+    const people = await api<{ id: number; name: string }[]>('GET', '/api/participants');
+    render(
+      $('#names'),
+      people.map((p) =>
+        h('button', { type: 'button', 'aria-pressed': p.id === me.participant?.id ? 'true' : undefined, onclick: () => choose({ participantId: p.id }) }, p.name),
+      ),
+      !people.length && h('p', { className: 'muted' }, 'Ingen har meldt seg på i år ennå. Bli den første!'),
+    );
+  }
+
+  async function choose(body: { participantId: number } | { name: string }) {
+    try {
+      await api('POST', '/api/me', body);
+      location.href = '/smaking/';
+    } catch (e) {
+      $('#pick-error').textContent = (e as Error).message;
+    }
+  }
+
+  $<HTMLFormElement>('#login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const button = (e.target as HTMLFormElement).querySelector('button')!;
+    button.disabled = true;
+    try {
+      await api('POST', '/api/login', { code: $<HTMLInputElement>('#code').value }, { redirectOn401: false });
+      $('#login-error').textContent = '';
+      await start();
+    } catch (err) {
+      $('#login-error').textContent = (err as Error).message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $<HTMLFormElement>('#name-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    choose({ name: $<HTMLInputElement>('#new-name').value });
+  });
+
+  $('#logout').addEventListener('click', async () => {
+    await api('POST', '/api/logout');
+    location.href = '/';
+  });
+
+  start();
+</script>

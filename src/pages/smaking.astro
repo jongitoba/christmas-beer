@@ -1,0 +1,281 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Smaking">
+  <div class="spread">
+    <div>
+      <h1 id="heading">Smaking</h1>
+      <p class="lead" id="who"></p>
+    </div>
+  </div>
+
+  <div id="revealed-notice" class="notice" hidden>
+    Resultatene er avslørt, og smakingen er låst. <a href="/resultater/">Se resultatene →</a>
+  </div>
+
+  <section id="add-section" class="card" hidden>
+    <h2 style="margin-top: 0" id="add-heading">Legg til ølet ditt</h2>
+    <form id="add-form" class="stack">
+      <div class="form-grid cols">
+        <div><label for="beer-name">Navn på ølet</label><input id="beer-name" name="name" maxlength="80" required /></div>
+        <div><label for="beer-brewery">Bryggeri</label><input id="beer-brewery" name="brewery" maxlength="80" /></div>
+        <div><label for="beer-abv">Alkohol %</label><input id="beer-abv" name="abv" inputmode="decimal" placeholder="6,5" /></div>
+      </div>
+      <button type="submit">Legg til</button>
+      <p class="error" id="add-error" role="alert"></p>
+    </form>
+  </section>
+
+  <h2>Ølene</h2>
+  <p class="muted small">Gi hver øl en karakter fra 1 til 11 på hvert kriterium, gjerne med tre desimaler. Du ser bare dine egne karakterer til resultatene avsløres.</p>
+  <div id="beers" class="stack"><p class="muted">Laster …</p></div>
+
+  <h2>Fremdrift</h2>
+  <div id="progress" class="card"></div>
+</Base>
+
+<script>
+  import { api, beerMeta, showAdminLink, type Me, type Tasting, type TastingBeer } from '../client/api.ts';
+  import { $, h, render } from '../client/dom.ts';
+  import { formatScore, parseScoreInput, MAX_SCORE, MIN_SCORE } from '../lib/score.ts';
+
+  let me: Me;
+  let tasting: Tasting;
+  const open = new Set<number>();
+
+  const parseAbv = (text: string) => {
+    // Sent as text; the Worker validates it and explains what is wrong.
+    const t = text.trim().replace(',', '.').replace('%', '').trim();
+    return t === '' ? null : t;
+  };
+
+  /** Your own average across criteria, for the live preview. */
+  const ownAverage = (scores: Record<string, number>) => {
+    const values = Object.values(scores);
+    return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+  };
+
+  async function load() {
+    me = await api<Me>('GET', '/api/me');
+    showAdminLink(me);
+    if (!me.participant) {
+      location.replace('/?bytt');
+      return;
+    }
+    tasting = await api<Tasting>('GET', '/api/tasting');
+    draw();
+  }
+
+  function draw() {
+    const locked = tasting.revealed;
+    $('#heading').textContent = `Juleølsmaking ${tasting.year}`;
+    render(
+      $('#who'),
+      `Du er ${me.participant!.name}${me.role === 'admin' ? ' (admin)' : ''} · `,
+      h('a', { href: '/?bytt' }, 'Bytt'),
+    );
+    $('#revealed-notice').hidden = !locked;
+    $('#add-section').hidden = locked;
+    const brought = tasting.beers.some((b) => b.broughtBy.id === me.participant!.id);
+    $('#add-heading').textContent = brought ? 'Legg til et øl til' : 'Legg til ølet ditt';
+
+    render(
+      $('#beers'),
+      tasting.beers.length ? tasting.beers.map(beerCard) : h('p', { className: 'muted' }, 'Ingen øl er lagt til ennå.'),
+    );
+    drawProgress();
+  }
+
+  /** Redraws one beer card only, so unsaved scores in other open cards are kept. */
+  function redrawBeer(id: number) {
+    const beer = tasting.beers.find((b) => b.id === id);
+    const el = document.querySelector(`[data-beer="${id}"]`);
+    if (beer && el) el.replaceWith(beerCard(beer));
+  }
+
+  function drawProgress() {
+    const total = tasting.beers.length;
+    render(
+      $('#progress'),
+      tasting.participants.length
+        ? h('div', { className: 'row' }, tasting.participants.map((p) =>
+            h('span', { className: `chip${total && p.completed === total ? ' done' : ''}` }, `${p.name} ${p.completed}/${total}`)))
+        : h('p', { className: 'muted' }, 'Ingen deltakere ennå.'),
+      h('p', { className: 'small muted', style: 'margin: 10px 0 0' }, 'Antall øl hver person har gitt alle karakterene.'),
+    );
+  }
+
+  function beerCard(beer: TastingBeer) {
+    const locked = tasting.revealed;
+    const count = Object.keys(beer.mine).length;
+    const total = tasting.criteria.length;
+    const avg = ownAverage(beer.mine);
+    const canEdit = !locked && (beer.broughtBy.id === me.participant!.id || me.role === 'admin');
+    const isOpen = open.has(beer.id);
+    const card = h('article', { className: 'card beer', 'data-beer': beer.id },
+      h('div', { className: 'spread' },
+        h('div', {},
+          h('h3', {}, beer.name),
+          h('div', { className: 'meta' }, [beerMeta(beer), `Tatt med av ${beer.broughtBy.name}`].filter(Boolean).join(' · ')),
+          h('div', { className: 'row', style: 'margin-top: 6px' },
+            h('span', { className: `chip${count === total ? ' done' : ''}` }, `Du: ${count}/${total}`),
+            h('span', { className: 'chip' }, `${beer.raterCount} har vurdert`),
+          ),
+        ),
+        h('div', { className: 'mine' },
+          h('div', { className: 'small muted' }, 'Ditt snitt'),
+          h('div', { className: 'value' }, formatScore(avg)),
+        ),
+      ),
+      h('div', { className: 'row actions' },
+        !locked && h('button', { type: 'button', className: isOpen ? 'ghost' : '', 'aria-expanded': String(isOpen), onclick: () => toggle(beer.id) },
+          isOpen ? 'Lukk' : count ? 'Endre karakterer' : 'Gi karakter'),
+        canEdit && h('button', { type: 'button', className: 'ghost', onclick: () => editBeer(beer) }, 'Endre øl'),
+        canEdit && h('button', { type: 'button', className: 'danger', onclick: () => deleteBeer(beer) }, 'Slett'),
+      ),
+      isOpen && !locked && scoreForm(beer),
+    );
+    return card;
+  }
+
+  function toggle(id: number) {
+    open.has(id) ? open.delete(id) : open.add(id);
+    redrawBeer(id);
+  }
+
+  function scoreForm(beer: TastingBeer) {
+    const status = h('span', { className: 'saved', role: 'status' });
+    const error = h('p', { className: 'error', role: 'alert' });
+    const preview = h('strong', { className: 'num' }, formatScore(ownAverage(beer.mine)));
+    const fields = new Map<string, { text: HTMLInputElement; range: HTMLInputElement }>();
+
+    const current = () => {
+      const scores: Record<string, number | null> = {};
+      for (const [key, f] of fields) scores[key] = parseScoreInput(f.text.value);
+      return scores;
+    };
+    const updatePreview = () => {
+      try {
+        const values = Object.values(current()).filter((v): v is number => v != null);
+        preview.textContent = formatScore(values.length ? values.reduce((a, b) => a + b, 0) / values.length : null);
+        error.textContent = '';
+      } catch (e) {
+        error.textContent = (e as Error).message;
+      }
+      status.textContent = '';
+    };
+
+    const rows = tasting.criteria.map((c) => {
+      const existing = beer.mine[c.key];
+      const id = `s-${beer.id}-${c.key}`;
+      const text = h('input', {
+        id, type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: '–',
+        value: existing != null ? formatScore(existing) : '',
+        'aria-describedby': `${id}-hint`,
+      });
+      const range = h('input', {
+        type: 'range', min: MIN_SCORE, max: MAX_SCORE, step: '0.001', value: existing ?? 6,
+        className: existing != null ? '' : 'unset', 'aria-label': `${c.label} (glidebryter)`, tabindex: '-1',
+      });
+      range.addEventListener('input', () => {
+        range.classList.remove('unset');
+        text.value = formatScore(Number(range.value));
+        updatePreview();
+      });
+      text.addEventListener('input', () => {
+        try {
+          const v = parseScoreInput(text.value);
+          range.classList.toggle('unset', v == null);
+          if (v != null) range.value = String(v);
+        } catch {}
+        updatePreview();
+      });
+      fields.set(c.key, { text, range });
+      return h('div', { className: 'score-row' }, h('label', { for: id }, c.label), range, text,
+        h('span', { id: `${id}-hint`, hidden: true }, `Tall fra ${MIN_SCORE} til ${MAX_SCORE}, maks tre desimaler`));
+    });
+
+    const form = h('form', { className: 'score-form' },
+      rows,
+      h('div', { className: 'spread', style: 'align-items: center' },
+        h('div', {}, h('span', { className: 'muted small' }, 'Ditt snitt: '), preview),
+        h('div', { className: 'row' }, status, h('button', { type: 'submit' }, 'Lagre')),
+      ),
+      error,
+    );
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      let scores: Record<string, number | null>;
+      try {
+        scores = current();
+      } catch (err) {
+        error.textContent = (err as Error).message;
+        return;
+      }
+      const button = form.querySelector<HTMLButtonElement>('button[type=submit]')!;
+      button.disabled = true;
+      try {
+        await api('PUT', `/api/ratings/${beer.id}`, { scores });
+        tasting = await api<Tasting>('GET', '/api/tasting');
+        open.delete(beer.id);
+        if (tasting.revealed) draw();
+        else {
+          redrawBeer(beer.id);
+          drawProgress();
+        }
+      } catch (err) {
+        error.textContent = (err as Error).message;
+        button.disabled = false;
+      }
+    });
+    return form;
+  }
+
+  async function editBeer(beer: TastingBeer) {
+    const name = prompt('Navn på ølet', beer.name);
+    if (name === null) return;
+    const brewery = prompt('Bryggeri', beer.brewery);
+    if (brewery === null) return;
+    const abv = prompt('Alkohol %', beer.abv != null ? beer.abv.toLocaleString('nb-NO') : '');
+    if (abv === null) return;
+    try {
+      await api('PATCH', `/api/beers/${beer.id}`, { name, brewery, abv: parseAbv(abv) });
+      tasting = await api<Tasting>('GET', '/api/tasting');
+      draw();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  async function deleteBeer(beer: TastingBeer) {
+    if (!confirm(`Slette «${beer.name}»? Alle karakterene for ølet blir også slettet.`)) return;
+    try {
+      await api('DELETE', `/api/beers/${beer.id}`);
+      tasting = await api<Tasting>('GET', '/api/tasting');
+      draw();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  $<HTMLFormElement>('#add-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const data = new FormData(form);
+    const button = form.querySelector('button')!;
+    button.disabled = true;
+    try {
+      await api('POST', '/api/beers', { name: data.get('name'), brewery: data.get('brewery'), abv: parseAbv(String(data.get('abv') ?? '')) });
+      form.reset();
+      $('#add-error').textContent = '';
+      tasting = await api<Tasting>('GET', '/api/tasting');
+      draw();
+    } catch (err) {
+      $('#add-error').textContent = (err as Error).message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  load().catch((e) => render($('#beers'), h('p', { className: 'error' }, (e as Error).message)));
+</script>

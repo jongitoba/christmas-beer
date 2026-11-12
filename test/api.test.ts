@@ -242,6 +242,7 @@ test('beer validation', async () => {
   assert.equal((await c.call('POST', '/api/beers', { name: 'Øl', abv: 99 })).status, 400);
   assert.equal((await c.call('POST', '/api/beers', { name: 'Øl', abv: 'abc' })).status, 400);
   assert.equal((await c.call('POST', '/api/beers', { name: 'Øl', abv: 4.56 })).body.abv, 4.6);
+  assert.equal((await c.call('POST', '/api/beers', { name: 'Øl', description: 'x'.repeat(301) })).status, 400);
 });
 
 test('only the owner or admin can edit or delete a beer', async () => {
@@ -279,4 +280,27 @@ test('unknown routes and methods give 404', async () => {
   for (const [m, p] of [['GET', '/api/nope'], ['DELETE', '/api/me'], ['GET', '/api/beers/1/x'], ['PUT', '/api/ratings/abc']]) {
     assert.equal((await c.call(m!, p!, m === 'PUT' ? { scores: {} } : undefined)).status, 404, `${m} ${p}`);
   }
+});
+
+test('a beer can have a short description that the owner can change', async () => {
+  const env = makeEnv();
+  const kari = client(env);
+  const ola = client(env);
+  await kari.join('jul', 'Kari');
+  await ola.join('jul', 'Ola');
+  const created = await kari.call('POST', '/api/beers', { name: 'Nisseøl', description: '  Mørk og\n krydret  ' });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.description, 'Mørk og krydret');
+  assert.equal((await kari.call('POST', '/api/beers', { name: 'Uten' })).body.description, '');
+
+  // Everyone sees it before the reveal.
+  const seen = (await ola.call('GET', '/api/tasting')).body.beers.find((b: Json) => b.id === created.body.id);
+  assert.equal(seen.description, 'Mørk og krydret');
+
+  // A PATCH without a description keeps it; an empty one clears it.
+  const id = created.body.id;
+  assert.equal((await kari.call('PATCH', `/api/beers/${id}`, { name: 'Nisseøl' })).body.description, 'Mørk og krydret');
+  assert.equal((await kari.call('PATCH', `/api/beers/${id}`, { name: 'Nisseøl', description: 'Lys' })).body.description, 'Lys');
+  assert.equal((await kari.call('PATCH', `/api/beers/${id}`, { name: 'Nisseøl', description: '' })).body.description, '');
+  assert.equal((await ola.call('PATCH', `/api/beers/${id}`, { name: 'Nisseøl', description: 'Hacket' })).status, 403);
 });

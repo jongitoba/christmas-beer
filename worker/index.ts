@@ -78,6 +78,9 @@ const cleanText = (value: unknown, field: string, max: number, required = true):
   return text;
 };
 
+/** Max length of a beer's description. The form in smaking.astro uses the same limit. */
+const DESCRIPTION_MAX = 300;
+
 function beerInput(body: Record<string, unknown>): db.BeerInput {
   let abv: number | null = null;
   if (body.abv !== undefined && body.abv !== null && body.abv !== '') {
@@ -85,7 +88,13 @@ function beerInput(body: Record<string, unknown>): db.BeerInput {
     if (!Number.isFinite(abv) || abv < 0 || abv > 30) throw new HttpError(400, 'Alkoholprosent må være mellom 0 og 30');
     abv = Math.round(abv * 10) / 10;
   }
-  return { name: cleanText(body.name, 'Navn på ølet', 80), brewery: cleanText(body.brewery, 'Bryggeri', 80, false), abv };
+  return {
+    name: cleanText(body.name, 'Navn på ølet', 80),
+    brewery: cleanText(body.brewery, 'Bryggeri', 80, false),
+    abv,
+    // Left out of the body: keep the current description (only matters for PATCH).
+    description: body.description === undefined ? undefined : cleanText(body.description, 'Beskrivelsen', DESCRIPTION_MAX, false),
+  };
 }
 
 const idFrom = (text: string | undefined) => {

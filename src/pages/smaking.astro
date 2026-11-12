@@ -21,6 +21,10 @@ import Base from '../layouts/Base.astro';
         <div><label for="beer-brewery">Bryggeri</label><input id="beer-brewery" name="brewery" maxlength="80" /></div>
         <div><label for="beer-abv">Alkohol %</label><input id="beer-abv" name="abv" inputmode="decimal" placeholder="6,5" /></div>
       </div>
+      <div>
+        <label for="beer-description">Kort beskrivelse (valgfritt)</label>
+        <textarea id="beer-description" name="description" maxlength="300" rows="2" placeholder="F.eks. mørk og krydret, med hint av appelsin"></textarea>
+      </div>
       <button type="submit">Legg til</button>
       <p class="error" id="add-error" role="alert"></p>
     </form>
@@ -117,6 +121,7 @@ import Base from '../layouts/Base.astro';
         h('div', {},
           h('h3', {}, beer.name),
           h('div', { className: 'meta' }, [beerMeta(beer), beer.broughtBy && `Tatt med av ${beer.broughtBy.name}`].filter(Boolean).join(' · ')),
+          beer.description && h('p', { className: 'desc' }, beer.description),
           h('div', { className: 'row', style: 'margin-top: 6px' },
             h('span', { className: `chip${count === total ? ' done' : ''}` }, `Du: ${count}/${total}`),
             h('span', { className: 'chip' }, `${beer.raterCount} har vurdert`),
@@ -238,8 +243,10 @@ import Base from '../layouts/Base.astro';
     if (brewery === null) return;
     const abv = prompt('Alkohol %', beer.abv != null ? beer.abv.toLocaleString('nb-NO') : '');
     if (abv === null) return;
+    const description = prompt('Kort beskrivelse (valgfritt)', beer.description);
+    if (description === null) return;
     try {
-      await api('PATCH', `/api/beers/${beer.id}`, { name, brewery, abv: parseAbv(abv) });
+      await api('PATCH', `/api/beers/${beer.id}`, { name, brewery, abv: parseAbv(abv), description });
       tasting = await api<Tasting>('GET', '/api/tasting');
       draw();
     } catch (e) {
@@ -265,7 +272,12 @@ import Base from '../layouts/Base.astro';
     const button = form.querySelector('button')!;
     button.disabled = true;
     try {
-      await api('POST', '/api/beers', { name: data.get('name'), brewery: data.get('brewery'), abv: parseAbv(String(data.get('abv') ?? '')) });
+      await api('POST', '/api/beers', {
+        name: data.get('name'),
+        brewery: data.get('brewery'),
+        abv: parseAbv(String(data.get('abv') ?? '')),
+        description: data.get('description'),
+      });
       form.reset();
       $('#add-error').textContent = '';
       tasting = await api<Tasting>('GET', '/api/tasting');

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import worker, { currentYear, type Env } from '../worker/index.ts';
-import { DEFAULT_GROUP_CODE } from '../worker/config.ts';
+import { DEFAULT_ADMIN_CODE, DEFAULT_GROUP_CODE, DEFAULT_PARTICIPANTS } from '../worker/config.ts';
 import { newSession, signSession, SESSION_COOKIE } from '../worker/session.ts';
 import { createTestDb } from './helpers/fake-d1.ts';
 
@@ -52,7 +52,7 @@ function client(env: Env) {
 const scores = (u: number, l: number, r: number, f: number, s: number, w: number) => ({ utseende: u, lyd: l, rase: r, fylde: f, smak: s, wok: w });
 
 test('missing or weak config fails closed (500)', async () => {
-  for (const o of [{ ADMIN_CODE: undefined }, { ADMIN_CODE: '' }, { SESSION_SECRET: undefined }, { SESSION_SECRET: 'short' }, { ADMIN_CODE: 'jul' }]) {
+  for (const o of [{ SESSION_SECRET: undefined }, { SESSION_SECRET: 'short' }, { ADMIN_CODE: 'jul' }, { DB: undefined as unknown as D1Database }]) {
     const res = await client(makeEnv(o)).call('POST', '/api/login', { code: 'jul' });
     assert.equal(res.status, 500, JSON.stringify(o));
   }
@@ -69,6 +69,16 @@ test('without a GROUP_CODE secret the hard-coded "password" is the group code', 
   assert.equal((await client(makeEnv({ GROUP_CODE: undefined, ADMIN_CODE: 'password' })).call('POST', '/api/login', { code: 'password' })).status, 500);
   // A GROUP_CODE secret replaces the default.
   assert.equal((await client(makeEnv({ GROUP_CODE: 'jul' })).call('POST', '/api/login', { code: 'password' })).status, 401);
+});
+
+test('without an ADMIN_CODE secret the hard-coded "password-admin" is the admin code', async () => {
+  assert.equal(DEFAULT_ADMIN_CODE, 'password-admin');
+  const c = client(makeEnv({ GROUP_CODE: undefined, ADMIN_CODE: undefined }));
+  assert.equal((await c.call('POST', '/api/login', { code: 'nisse' })).status, 401);
+  assert.equal((await c.call('POST', '/api/login', { code: 'password-admin' })).status, 200);
+  assert.equal((await c.call('GET', '/api/me')).body.role, 'admin');
+  // An ADMIN_CODE secret replaces the default.
+  assert.equal((await client(makeEnv({ ADMIN_CODE: 'nisse' })).call('POST', '/api/login', { code: 'password-admin' })).status, 401);
 });
 
 test('non-API paths are served as static assets', async () => {
@@ -111,13 +121,37 @@ test('picking a name: new names are created, existing names are reused (case-ins
   const b = client(env);
   assert.equal(await b.join('jul', 'kari'), id);
   const list = await b.call('GET', '/api/participants');
-  assert.deepEqual(list.body, [{ id, name: 'Kari' }]);
+  assert.deepEqual(list.body.filter((p: Json) => p.name === 'Kari'), [{ id, name: 'Kari' }]);
+  assert.equal(list.body.length, DEFAULT_PARTICIPANTS.length + 1);
   // Picking by id works too.
   const c = client(env);
   await c.call('POST', '/api/login', { code: 'jul' });
   assert.equal((await c.call('POST', '/api/me', { participantId: id })).body.participant.name, 'Kari');
   assert.equal((await c.call('POST', '/api/me', { participantId: 999 })).status, 404);
   assert.equal((await c.call('POST', '/api/me', { name: '   ' })).status, 400);
+});
+
+test('a new year starts with the default people to choose from', async () => {
+  const env = makeEnv();
+  const c = client(env);
+  await c.call('POST', '/api/login', { code: 'jul' });
+  const list = (await c.call('GET', '/api/participants')).body as { id: number; name: string }[];
+  assert.deepEqual(new Set(list.map((p) => p.name)), new Set(DEFAULT_PARTICIPANTS));
+  // Picking a listed name reuses that person instead of creating a duplicate.
+  const scott = list.find((p) => p.name === 'Scott')!;
+  assert.equal(await c.join('jul', 'scott'), scott.id);
+  assert.equal((await c.call('GET', '/api/participants')).body.length, DEFAULT_PARTICIPANTS.length);
+});
+
+test('a deleted default person does not come back', async () => {
+  const env = makeEnv();
+  const jon = client(env);
+  await jon.join('nisse', 'Jon');
+  const elise = (await jon.call('GET', '/api/participants')).body.find((p: Json) => p.name === 'Elise');
+  assert.equal((await jon.call('DELETE', `/api/admin/participants/${elise.id}`)).status, 200);
+  const names = (await jon.call('GET', '/api/participants')).body.map((p: Json) => p.name);
+  assert.ok(!names.includes('Elise'));
+  assert.equal((await jon.call('GET', '/api/tasting')).body.participants.length, DEFAULT_PARTICIPANTS.length);
 });
 
 test('you need to pick a name before adding beers or scores', async () => {
@@ -166,7 +200,9 @@ test('full tasting: own scores only before reveal, full results after, locked on
   assert.deepEqual(olaView.beers.find((b: Json) => b.id === beerB.id).mine, {});
   assert.equal(olaView.participants.find((p: Json) => p.name === 'Kari').completed, 2);
   assert.equal(olaView.participants.find((p: Json) => p.name === 'Ola').completed, 0);
-  assert.ok(!JSON.stringify(olaView).includes('"10"') && !JSON.stringify(olaView).includes(':10'), 'no foreign scores leak');
+  // No one else's scores anywhere in the response: beers only carry "mine", nothing like ratings or averages.
+  for (const b of olaView.beers) assert.deepEqual(Object.keys(b).sort(), ['abv', 'brewery', 'broughtBy', 'id', 'mine', 'name', 'raterCount']);
+  assert.ok(!JSON.stringify(olaView).includes('ratings') && !JSON.stringify(olaView).includes('overall'), 'no foreign scores leak');
   assert.equal((await ola.call('GET', '/api/results')).status, 403);
 
   // Only the admin can reveal.
@@ -246,7 +282,9 @@ test('only the owner or admin can edit or delete a beer', async () => {
   assert.equal((await jon.call('DELETE', `/api/admin/participants/${kariId}`)).status, 200);
   const view = (await jon.call('GET', '/api/tasting')).body;
   assert.deepEqual(view.beers, []);
-  assert.deepEqual(view.participants.map((p: Json) => p.name), ['Jon', 'Ola']);
+  const names = view.participants.map((p: Json) => p.name);
+  assert.ok(!names.includes('Kari'));
+  assert.ok(names.includes('Jon') && names.includes('Ola'));
 });
 
 test('unknown routes and methods give 404', async () => {

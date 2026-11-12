@@ -16,7 +16,7 @@ import {
   SESSION_COOKIE, type Session,
 } from './session.ts';
 import * as db from './db.ts';
-import { DEFAULT_GROUP_CODE } from './config.ts';
+import { DEFAULT_ADMIN_CODE, DEFAULT_GROUP_CODE, DEFAULT_PARTICIPANTS } from './config.ts';
 import { rank, summarize, toMilli } from '../src/lib/score.ts';
 
 export interface Env {
@@ -24,6 +24,7 @@ export interface Env {
   DB: D1Database;
   /** Optional: overrides DEFAULT_GROUP_CODE. */
   GROUP_CODE?: string;
+  /** Optional: overrides DEFAULT_ADMIN_CODE. */
   ADMIN_CODE?: string;
   SESSION_SECRET?: string;
 }
@@ -50,9 +51,13 @@ export const currentYear = (now = new Date()) =>
   Number(new Intl.DateTimeFormat('en', { timeZone: 'Europe/Oslo', year: 'numeric' }).format(now));
 
 const groupCode = (env: Env) => env.GROUP_CODE || DEFAULT_GROUP_CODE;
+const adminCode = (env: Env) => env.ADMIN_CODE || DEFAULT_ADMIN_CODE;
+
+/** This year's tasting, created with the default participants the first time it is needed. */
+const thisYearsTasting = (env: Env) => db.ensureTasting(env.DB, currentYear(), DEFAULT_PARTICIPANTS);
 
 const configOk = (env: Env) =>
-  Boolean(env.DB && env.ADMIN_CODE && env.SESSION_SECRET && env.SESSION_SECRET.length >= 32 && groupCode(env) !== env.ADMIN_CODE);
+  Boolean(env.DB && env.SESSION_SECRET && env.SESSION_SECRET.length >= 32 && groupCode(env) !== adminCode(env));
 
 const sameOrigin = (request: Request) => {
   const origin = request.headers.get('origin');
@@ -132,7 +137,7 @@ const meResponse = (session: Session, me: db.Participant | null) =>
   ({ role: session.role, year: currentYear(), participant: me ? publicParticipant(me) : null });
 
 async function tastingView(ctx: Ctx, year: number) {
-  const tasting = year === currentYear() ? await db.ensureTasting(ctx.env.DB, year) : await db.getTasting(ctx.env.DB, year);
+  const tasting = year === currentYear() ? await thisYearsTasting(ctx.env) : await db.getTasting(ctx.env.DB, year);
   if (!tasting) throw new HttpError(404, 'Fant ingen smaking for ' + year);
   const [participants, beers, ratings] = await Promise.all([
     db.listParticipants(ctx.env.DB, year),
@@ -220,7 +225,7 @@ async function route(ctx: Ctx): Promise<Response> {
   if (path === '/api/me' && method === 'POST') {
     const body = await readBody(request);
     const year = currentYear();
-    await db.ensureTasting(env.DB, year);
+    await thisYearsTasting(env);
     let participant: db.Participant | null;
     if (body.participantId !== undefined) {
       participant = await db.getParticipant(env.DB, idFrom(String(body.participantId)));
@@ -234,6 +239,7 @@ async function route(ctx: Ctx): Promise<Response> {
   }
 
   if (path === '/api/participants' && method === 'GET') {
+    await thisYearsTasting(env);
     return json((await db.listParticipants(env.DB, currentYear())).map(publicParticipant));
   }
 
@@ -319,7 +325,7 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
       const body = await readBody(request);
       const code = typeof body.code === 'string' ? body.code.trim() : '';
       // Check both codes every time, so timing does not reveal which one matched.
-      const [isAdmin, isMember] = await Promise.all([safeEqual(code, env.ADMIN_CODE!), safeEqual(code, groupCode(env))]);
+      const [isAdmin, isMember] = await Promise.all([safeEqual(code, adminCode(env)), safeEqual(code, groupCode(env))]);
       if (!isAdmin && !isMember) return json({ error: 'Feil kode' }, 401);
       const token = await signSession(newSession(isAdmin ? 'admin' : 'member'), env.SESSION_SECRET!);
       return json({ ok: true }, 200, { 'set-cookie': sessionCookie(token) });

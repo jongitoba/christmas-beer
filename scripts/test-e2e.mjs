@@ -19,7 +19,8 @@ const PORT = 8798;
 const BASE = remote ?? `http://127.0.0.1:${PORT}`;
 // No GROUP_CODE var: this tests the hard-coded default group code.
 const GROUP_CODE = 'password';
-const ADMIN_CODE = 'e2e-admin-code';
+// No ADMIN_CODE var either: this tests the hard-coded default admin code.
+const ADMIN_CODE = 'password-admin';
 
 let server;
 let stateDir;
@@ -29,7 +30,6 @@ if (!remote) {
     'wrangler', 'dev',
     '--port', String(PORT), '--ip', '127.0.0.1',
     '--persist-to', stateDir,
-    '--var', `ADMIN_CODE:${ADMIN_CODE}`,
     '--var', 'SESSION_SECRET:e2e-session-secret-that-is-long-enough',
     '--show-interactive-dev-session=false',
   ], { stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32' });

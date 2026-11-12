@@ -79,9 +79,19 @@ export async function getTasting(db: D1Database, year: number): Promise<Tasting 
   return row ? toTasting(row) : null;
 }
 
-/** Returns the tasting for a year, creating it with the current criteria if it does not exist yet. */
-export async function ensureTasting(db: D1Database, year: number): Promise<Tasting> {
-  await db.prepare('INSERT OR IGNORE INTO tastings (year, criteria) VALUES (?, ?)').bind(year, JSON.stringify(CRITERIA)).run();
+/**
+ * Returns the tasting for a year. If it does not exist yet, creates it with the current
+ * criteria and the given starting participants. The participants are added only on
+ * creation, so people the admin deletes later do not come back.
+ */
+export async function ensureTasting(db: D1Database, year: number, participants: readonly string[] = []): Promise<Tasting> {
+  const existing = await getTasting(db, year);
+  if (existing) return existing;
+  const created = await db.prepare('INSERT OR IGNORE INTO tastings (year, criteria) VALUES (?, ?)').bind(year, JSON.stringify(CRITERIA)).run();
+  // Only the request that actually created the row adds the participants.
+  if (created.meta.changes === 1 && participants.length) {
+    await db.batch(participants.map((name) => db.prepare('INSERT OR IGNORE INTO participants (year, name) VALUES (?, ?)').bind(year, name)));
+  }
   return (await getTasting(db, year))!;
 }
 

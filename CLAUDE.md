@@ -31,8 +31,9 @@ Chosen stack (the same as jonoba.no, plus D1):
   (`worker/db.ts`), so there is no migration step. Change the schema with care: use
   additive changes (`ALTER TABLE … ADD COLUMN`, `CREATE … IF NOT EXISTS`).
 - **Auth:** a shared group code and a separate admin code, then you pick your name.
-  The group code is temporarily hard-coded as `password` (`worker/config.ts`, Jon's
-  decision); a `GROUP_CODE` Secret overrides it.
+  Both codes are temporarily hard-coded placeholders in `worker/config.ts` (Jon's
+  decision): `password` and `password-admin`. `GROUP_CODE` / `ADMIN_CODE` Secrets
+  override them. `SESSION_SECRET` must still be a Secret.
   Session is an HMAC-signed cookie (`worker/session.ts`).
 - **Tests:** `node:test` for unit and API tests (`test/`, D1 is faked with `node:sqlite`),
   plus `scripts/test-e2e.mjs` against the real Worker.

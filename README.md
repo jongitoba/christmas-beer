@@ -17,7 +17,7 @@ npm run check        # type-check pages and Worker
 ```
 
 `npm run dev` creates `.dev.vars` from `.dev.vars.example` the first time. Log in locally
-with `password` (member) or `nisse` (admin).
+with `password` (member) or `password-admin` (admin).
 
 It hot reloads: edits to pages, client scripts and CSS show up in the open browser tab
 right away, and edits to `worker/` or `src/lib/` rebuild the Worker so the next API call
@@ -36,14 +36,14 @@ survives restarts; delete that folder to start fresh.
 
 ## Cloudflare setup
 
-For now the group code everyone uses to get in is hard-coded as `password`
-(`worker/config.ts`). Adding a `GROUP_CODE` Secret overrides it.
+For now the codes are hard-coded placeholders in `worker/config.ts`: `password` for
+everyone and `password-admin` for the admin (reveals results, deletes things). A
+`GROUP_CODE` or `ADMIN_CODE` Secret overrides each one; the two must differ.
 
-The Worker needs these as type **Secret** (dashboard or `npx wrangler secret put <NAME>`):
+The Worker needs this as type **Secret** (dashboard or `npx wrangler secret put <NAME>`):
 
 | Secret | What |
 | --- | --- |
-| `ADMIN_CODE` | Code for the admin (reveals results, deletes things). Must differ from the group code |
 | `SESSION_SECRET` | At least 32 random characters, e.g. `openssl rand -base64 32` |
 
 The D1 database (`christmas-beer`) is created by wrangler on the first deploy. Changing

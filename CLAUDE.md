@@ -13,7 +13,7 @@
   `npm run check` (types). CI runs all three.
 
 The project is listed on jonoba.no/prosjekter through a card in the repo
-`jongitoba/jonoba-nettside` (`src/content/prosjekter/christmas-beer.md`). If the name,
+`jongitoba/jonoba-nettside` (`src/content/projects/christmas-beer.md`). If the name,
 description or URL changes here, tell Jon that the card there should be updated.
 Do not change that repo from here.
 

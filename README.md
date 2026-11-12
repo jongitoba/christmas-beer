@@ -36,7 +36,8 @@ survives restarts; delete that folder to start fresh.
 
 ## Earlier years (2021–2025)
 
-The results page has an "Alle år" view with charts across every revealed year. Earlier
+The results page is public (no login needed) and has an "Alle år" view with charts across
+every revealed year. A year's results only appear once the admin reveals it. Earlier
 years come from the old Google spreadsheet through `scripts/import-history.mjs`:
 
 1. In Google Sheets: File → Download → Microsoft Excel (.xlsx). Keep the file outside the repo.

@@ -3,7 +3,8 @@
  *
  * Static pages (Astro build in ./dist) are served directly by Cloudflare and contain no data.
  * Only /api/* reaches this Worker (see run_worker_first in wrangler.jsonc).
- * Every API route except login needs a valid session cookie (worker/session.ts).
+ * The results of revealed years are public (PUBLIC_ROUTES, Jon's decision). Every other
+ * API route except login needs a valid session cookie (worker/session.ts).
  *
  * Visibility: before a tasting is revealed you only see your own scores (plus how many
  * people have rated each beer). After the admin reveals it, everyone sees all scores.
@@ -220,11 +221,11 @@ async function yearResults(env: Env, tasting: db.Tasting) {
   };
 }
 
-async function results(ctx: Ctx, year: number) {
-  const tasting = await db.getTasting(ctx.env.DB, year);
+async function results(env: Env, year: number) {
+  const tasting = await db.getTasting(env.DB, year);
   if (!tasting) throw new HttpError(404, 'Fant ingen smaking for ' + year);
   if (!tasting.revealed) throw new HttpError(403, 'Resultatene er ikke avslørt ennå');
-  const { ratingRows: _, participants: __, ...rest } = await yearResults(ctx.env, tasting);
+  const { ratingRows: _, participants: __, ...rest } = await yearResults(env, tasting);
   return rest;
 }
 
@@ -233,11 +234,11 @@ async function results(ctx: Ctx, year: number) {
  * scores); per person how many scores they gave and their average, to compare who rates hard.
  * Years that are not revealed yet are left out entirely.
  */
-async function history(ctx: Ctx) {
-  const years = (await db.listTastings(ctx.env.DB)).filter((t) => t.revealed).map((t) => t.year);
+async function history(env: Env) {
+  const years = (await db.listTastings(env.DB)).filter((t) => t.revealed).map((t) => t.year);
   const out = [];
   for (const year of years.sort((a, b) => a - b)) {
-    const r = await yearResults(ctx.env, (await db.getTasting(ctx.env.DB, year))!);
+    const r = await yearResults(env, (await db.getTasting(env.DB, year))!);
     const scores = r.ratingRows.map((x) => x.milli / 1000);
     const people = r.participants
       .map((name) => {
@@ -287,13 +288,9 @@ async function route(ctx: Ctx): Promise<Response> {
     return json((await db.listParticipants(env.DB, currentYear())).map(publicParticipant));
   }
 
-  if (path === '/api/years' && method === 'GET') return json(await db.listTastings(env.DB));
 
   if (path === '/api/tasting' && method === 'GET') return json(await tastingView(ctx, yearParam(url)));
 
-  if (path === '/api/results' && method === 'GET') return json(await results(ctx, yearParam(url)));
-
-  if (path === '/api/history' && method === 'GET') return json(await history(ctx));
 
   if (path === '/api/beers' && method === 'POST') {
     const me = requireMe(ctx);
@@ -379,6 +376,13 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
 
     if (url.pathname === '/api/logout' && request.method === 'POST') {
       return json({ ok: true }, 200, { 'set-cookie': clearSessionCookie() });
+    }
+
+    // Public, no login: results of revealed years only. Unrevealed years still answer 403.
+    if (request.method === 'GET') {
+      if (url.pathname === '/api/years') return json(await db.listTastings(env.DB));
+      if (url.pathname === '/api/results') return json(await results(env, yearParam(url)));
+      if (url.pathname === '/api/history') return json(await history(env));
     }
 
     const token = readCookie(request, SESSION_COOKIE);

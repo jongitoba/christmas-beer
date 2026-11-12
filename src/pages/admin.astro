@@ -36,7 +36,8 @@ import Base from '../layouts/Base.astro';
 
   function draw(t: Tasting, years: YearSummary[]) {
     const total = t.beers.length;
-    const done = t.participants.filter((p) => total && p.completed === total).length;
+    const joined = t.participants.filter((p) => p.joined);
+    const done = joined.filter((p) => total && p.completed === total).length;
 
     render(content,
       h('section', { className: 'card stack' },
@@ -44,7 +45,7 @@ import Base from '../layouts/Base.astro';
         h('p', { style: 'margin: 0' },
           t.revealed
             ? '✅ Resultatene er avslørt. Smakingen er låst for nye øl og karakterer.'
-            : `🤫 Hemmelig. ${done} av ${t.participants.length} har gitt alle karakterene på alle ${total} øl.`),
+            : `🤫 Hemmelig. ${done} av ${joined.length} har gitt alle karakterene på alle ${total} øl.`),
         h('div', { className: 'row' },
           t.revealed
             ? h('button', { type: 'button', className: 'ghost', onclick: () => confirm('Skjule resultatene igjen? Da kan alle endre karakterer.') && reveal(t.year, false) }, 'Skjul resultatene igjen')
@@ -55,13 +56,14 @@ import Base from '../layouts/Base.astro';
 
       h('section', { className: 'card' },
         h('h2', { style: 'margin-top: 0' }, 'Deltakere'),
+        h('p', { className: 'small muted', style: 'margin-top: 0' }, 'Bare de som har valgt navnet sitt i år, vises under Fremdrift og telles med.'),
         t.participants.length
           ? h('table', {},
               h('thead', {}, h('tr', {}, h('th', {}, 'Navn'), h('th', { className: 'n' }, 'Ferdig'), h('th', {}))),
               h('tbody', {}, t.participants.map((p) =>
                 h('tr', {},
                   h('td', {}, p.name),
-                  h('td', { className: 'n' }, `${p.completed}/${total}`),
+                  h('td', { className: 'n' }, p.joined ? `${p.completed}/${total}` : h('span', { className: 'muted' }, 'Ikke med ennå')),
                   h('td', { className: 'n' }, h('button', {
                     type: 'button', className: 'link',
                     onclick: () => confirm(`Slette ${p.name}? Alle karakterene deres blir også slettet.`) && run(() => api('DELETE', `/api/admin/participants/${p.id}`)),

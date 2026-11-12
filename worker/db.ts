@@ -33,6 +33,7 @@ const SCHEMA = [
     id INTEGER PRIMARY KEY,
     year INTEGER NOT NULL REFERENCES tastings(year),
     name TEXT NOT NULL,
+    joined_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (year, name COLLATE NOCASE)
   )`,
@@ -76,6 +77,21 @@ async function migrate(db: D1Database): Promise<void> {
   if (!has('unranked')) add.push(db.prepare('ALTER TABLE beers ADD COLUMN unranked INTEGER NOT NULL DEFAULT 0'));
   if (add.length) await db.batch(add);
 
+  // joined_at came after names started being pre-filled for each year. Everyone who had
+  // already scored, commented or brought a beer clearly took part, so they count as joined.
+  const { results: participantColumns } = await db.prepare('PRAGMA table_info(participants)').all<{ name: string }>();
+  if (!participantColumns.some((c) => c.name === 'joined_at')) {
+    await db.batch([
+      db.prepare('ALTER TABLE participants ADD COLUMN joined_at TEXT'),
+      db.prepare(
+        `UPDATE participants SET joined_at = datetime('now')
+         WHERE id IN (SELECT participant_id FROM ratings)
+            OR id IN (SELECT participant_id FROM comments)
+            OR id IN (SELECT brought_by FROM beers WHERE brought_by IS NOT NULL)`,
+      ),
+    ]);
+  }
+
   // The first version had brought_by NOT NULL. SQLite cannot drop that constraint in place,
   // so the table is recreated, but only while it is empty: dropping a table with rows
   // would cascade-delete their ratings.
@@ -96,6 +112,11 @@ export interface Participant {
   id: number;
   year: number;
   name: string;
+  /**
+   * Whether the person has picked their name this year. Each year starts with a list of
+   * names to choose from, and only the people who actually show up count as joined.
+   */
+  joined: boolean;
 }
 
 export interface Beer {
@@ -115,8 +136,11 @@ export interface Beer {
 interface TastingRow { year: number; criteria: string; revealed_at: string | null }
 interface BeerRow { id: number; year: number; brought_by: number | null; name: string; brewery: string; abv: number | null; description: string; note: string; unranked: number }
 const BEER_COLUMNS = 'id, year, brought_by, name, brewery, abv, description, note, unranked';
+interface ParticipantRow { id: number; year: number; name: string; joined_at: string | null }
+const PARTICIPANT_COLUMNS = 'id, year, name, joined_at';
 
 const toTasting = (r: TastingRow): Tasting => ({ year: r.year, criteria: JSON.parse(r.criteria), revealed: r.revealed_at != null });
+const toParticipant = (r: ParticipantRow): Participant => ({ id: r.id, year: r.year, name: r.name, joined: r.joined_at != null });
 const toBeer = (r: BeerRow): Beer => ({
   id: r.id, year: r.year, broughtBy: r.brought_by, name: r.name, brewery: r.brewery, abv: r.abv, description: r.description, note: r.note, unranked: r.unranked === 1,
 });
@@ -161,23 +185,29 @@ export async function setRevealed(db: D1Database, year: number, revealed: boolea
 
 export async function listParticipants(db: D1Database, year: number): Promise<Participant[]> {
   const { results } = await db
-    .prepare('SELECT id, year, name FROM participants WHERE year = ? ORDER BY name COLLATE NOCASE')
+    .prepare(`SELECT ${PARTICIPANT_COLUMNS} FROM participants WHERE year = ? ORDER BY name COLLATE NOCASE`)
     .bind(year)
-    .all<Participant>();
-  return results;
+    .all<ParticipantRow>();
+  return results.map(toParticipant);
 }
 
 export async function getParticipant(db: D1Database, id: number): Promise<Participant | null> {
-  return db.prepare('SELECT id, year, name FROM participants WHERE id = ?').bind(id).first<Participant>();
+  const row = await db.prepare(`SELECT ${PARTICIPANT_COLUMNS} FROM participants WHERE id = ?`).bind(id).first<ParticipantRow>();
+  return row ? toParticipant(row) : null;
 }
 
 /** Finds a participant by name (case-insensitive) or creates one. */
 export async function findOrCreateParticipant(db: D1Database, year: number, name: string): Promise<Participant> {
   await db.prepare('INSERT OR IGNORE INTO participants (year, name) VALUES (?, ?)').bind(year, name).run();
-  return (await db
-    .prepare('SELECT id, year, name FROM participants WHERE year = ? AND name = ? COLLATE NOCASE')
+  return toParticipant((await db
+    .prepare(`SELECT ${PARTICIPANT_COLUMNS} FROM participants WHERE year = ? AND name = ? COLLATE NOCASE`)
     .bind(year, name)
-    .first<Participant>())!;
+    .first<ParticipantRow>())!);
+}
+
+/** Records that the person has picked their name, so they count as taking part this year. */
+export async function markJoined(db: D1Database, id: number): Promise<void> {
+  await db.prepare("UPDATE participants SET joined_at = datetime('now') WHERE id = ? AND joined_at IS NULL").bind(id).run();
 }
 
 export async function deleteParticipant(db: D1Database, id: number): Promise<void> {

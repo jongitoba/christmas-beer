@@ -50,6 +50,10 @@ Domain rules that the code depends on:
   list only affects new years.
 - Before the admin reveals a year, people only see their own scores and comments. Revealed
   years are locked. `/api/history` and the "Alle år" charts only use revealed years.
+- Each new year starts with a pre-filled name list (`DEFAULT_PARTICIPANTS` in `worker/config.ts`)
+  so regulars can tap their name. A person only counts as taking part once they pick their name
+  that year (`participants.joined_at`). "Fremdrift" and the admin count show only those people;
+  the name picker and the admin table still show everyone.
 - Each person can leave one optional comment per beer (max 500 characters, `comments`
   table), saved with the scores. Comments are not part of any score and are left out of
   `/api/history`.

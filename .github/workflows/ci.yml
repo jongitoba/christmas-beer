@@ -1,0 +1,26 @@
+name: CI
+
+# Deploys happen through Cloudflare Workers Builds on push to main.
+# This workflow catches mistakes: types, unit/API tests, build, and the e2e check
+# that no data is reachable without logging in.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run test:e2e

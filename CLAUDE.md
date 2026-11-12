@@ -9,7 +9,8 @@
   Cloudflare Workers Builds deploys automatically on push to `main`.
   Other branches get a preview build.
 - **Run locally:** `npm run dev`
-- **Tests:** `npm test`
+- **Tests:** `npm test` (unit + API), `npm run test:e2e` (real Worker in `wrangler dev`),
+  `npm run check` (types). CI runs all three.
 
 The project is listed on jonoba.no/prosjekter through a card in the repo
 `jongitoba/jonoba-nettside` (`src/content/prosjekter/christmas-beer.md`). If the name,
@@ -18,27 +19,37 @@ Do not change that repo from here.
 
 ## Stack
 
-Start with the same stack as jonoba.no, so all projects work the same way:
+Chosen stack (the same as jonoba.no, plus D1):
 
-- **Framework:** Astro with a static build, TypeScript in strict mode
-- **Hosting:** Cloudflare Workers with static assets, configured in `wrangler.jsonc`
-- **Server logic:** one Worker (`worker/index.ts`), only for the routes that need it
-  (`run_worker_first`). Everything else is served statically.
-- **Storage:** Cloudflare KV. Use D1 instead if the data is relational.
-- **Tests:** `node:test` for unit tests. Add an e2e script if there is auth or
-  private data.
-- **Node:** version pinned in `.node-version` (jonoba.no uses `24`). Use the same as
-  jonoba.no unless there is a reason not to.
+- **Framework:** Astro with a static build, TypeScript in strict mode. Pages are plain
+  Astro with small client scripts (`src/client/`), no UI framework.
+- **Hosting:** Cloudflare Workers with static assets, configured in `wrangler.jsonc`.
+- **Server logic:** one Worker (`worker/index.ts`), only for `/api/*` (`run_worker_first`).
+  Static pages contain no data; everything is loaded from the API after login.
+- **Storage:** Cloudflare D1 (binding `DB`), since the data is relational
+  (tastings → participants → beers → ratings). The Worker creates its tables itself
+  (`worker/db.ts`), so there is no migration step. Change the schema with care: use
+  additive changes (`ALTER TABLE … ADD COLUMN`, `CREATE … IF NOT EXISTS`).
+- **Auth:** a shared group code and a separate admin code, then you pick your name.
+  Session is an HMAC-signed cookie (`worker/session.ts`).
+- **Tests:** `node:test` for unit and API tests (`test/`, D1 is faked with `node:sqlite`),
+  plus `scripts/test-e2e.mjs` against the real Worker.
+- **Node:** `24`, pinned in `.node-version`.
+
+Domain rules that the code depends on:
+
+- Scores are 1–11 with up to 3 decimals, stored as integer thousandths.
+- A beer's overall score is the average per criterion over everyone who scored it,
+  then the mean of those criterion averages. Missing scores are left out.
+- Criteria live in `src/lib/score.ts`. Each tasting stores its own copy, so editing the
+  list only affects new years.
+- Before the admin reveals a year, people only see their own scores. Revealed years
+  are locked.
 
 If the project needs something this stack handles poorly, suggest an alternative
-and explain why before using it. Examples:
-- Heavy client-side interactivity → React or Svelte islands inside Astro, or Vite + React.
-- A full-stack app → Next.js on Workers via OpenNext.
-- Python, long-running jobs or Docker → a host outside Cloudflare.
-
-Keep the suggestion short: what to use, why the default falls short, and what it
-costs (money, complexity, a different deploy setup). Wait for Jon's go-ahead before
-switching. Once a stack is chosen, record it here, replacing this section's defaults.
+and explain why before using it. Keep the suggestion short: what to use, why the
+current stack falls short, and what it costs (money, complexity, a different deploy
+setup). Wait for Jon's go-ahead before switching.
 
 ## Language
 

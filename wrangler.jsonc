@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "christmas-beer",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-11-01",
+  // Builds the Astro site before deploy (also in Cloudflare Workers Builds).
+  "build": { "command": "npm run build" },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page",
+    // Only the API goes through the Worker. All pages are static and contain no data.
+    "run_worker_first": ["/api/*"]
+  },
+  // Used by Workers Builds for branches other than main.
+  // Deliberately empty: previews do NOT inherit D1 or secrets, so /api answers
+  // 500 there (fail closed) and real tasting data is never reachable.
+  "previews": {},
+  // Without "database_id", wrangler creates the database on first deploy.
+  // The Worker creates its tables itself (src/lib/db.ts), so no migration step is needed.
+  "d1_databases": [{ "binding": "DB", "database_name": "christmas-beer" }],
+  // Only for local development (`npm run dev`): no Astro build, the Astro dev
+  // server serves the pages with hot reload. Never used for deploys.
+  "env": {
+    "dev": {
+      "build": { "command": "" },
+      "d1_databases": [{ "binding": "DB", "database_name": "christmas-beer" }]
+    }
+  },
+  "observability": {
+    "logs": { "enabled": true, "head_sampling_rate": 1, "invocation_logs": true, "persist": true }
+  }
+  // Secrets (GROUP_CODE, ADMIN_CODE, SESSION_SECRET) are set in the dashboard or
+  // with `npx wrangler secret put <NAME>`. Never here.
+}

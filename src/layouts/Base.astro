@@ -1,0 +1,40 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+const { title, description = 'Rangering av juleøl på den årlige juleølsmakingen.' } = Astro.props;
+const path = Astro.url.pathname;
+const current = (prefix: string) => (path.startsWith(prefix) ? 'page' : undefined);
+---
+<!doctype html>
+<html lang="nb">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title === 'Juleølsmaking' ? title : `${title} · Juleølsmaking`}</title>
+    <meta name="description" content={description} />
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <header class="site">
+      <div class="wrap">
+        <a class="brand" href="/">Jule<span>øl</span>smaking</a>
+        <nav class="main" aria-label="Hovedmeny">
+          <a href="/smaking/" aria-current={current('/smaking')}>Smaking</a>
+          <a href="/resultater/" aria-current={current('/resultater')}>Resultater</a>
+          <a href="/admin/" aria-current={current('/admin')} data-admin-link hidden>Admin</a>
+        </nav>
+      </div>
+    </header>
+    <main class="wrap">
+      <slot />
+    </main>
+    <footer class="site">
+      <div class="wrap">Karakterer fra 1 til 11 · <a href="https://jonoba.no">jonoba.no</a></div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,161 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Resultater">
+  <div class="spread">
+    <h1 id="heading">Resultater</h1>
+    <div style="min-width: 110px">
+      <label for="year">År</label>
+      <select id="year"></select>
+    </div>
+  </div>
+  <div id="content" class="stack" style="margin-top: 16px"><p class="muted">Laster …</p></div>
+</Base>
+
+<script>
+  import { api, ApiError, beerMeta, showAdminLink, type Me, type RankedBeer, type Results, type Tasting, type YearSummary } from '../client/api.ts';
+  import { $, h, render } from '../client/dom.ts';
+  import { formatScore, rank, summarize, type Criterion } from '../lib/score.ts';
+
+  const MEDALS = ['🥇', '🥈', '🥉'];
+  const content = $('#content');
+  const yearSelect = $<HTMLSelectElement>('#year');
+
+  async function start() {
+    const me = await api<Me>('GET', '/api/me');
+    showAdminLink(me);
+    const years = await api<YearSummary[]>('GET', '/api/years');
+    const wanted = Number(new URLSearchParams(location.search).get('år')) || me.year;
+    if (!years.some((y) => y.year === wanted)) years.unshift({ year: wanted, revealed: false, beerCount: 0 });
+    render(yearSelect, years.map((y) => h('option', { value: y.year, selected: y.year === wanted }, String(y.year))));
+    yearSelect.addEventListener('change', () => {
+      history.replaceState(null, '', `?år=${yearSelect.value}`);
+      show(Number(yearSelect.value));
+    });
+    await show(wanted);
+  }
+
+  async function show(year: number) {
+    $('#heading').textContent = `Resultater ${year}`;
+    render(content, h('p', { className: 'muted' }, 'Laster …'));
+    try {
+      drawResults(await api<Results>('GET', `/api/results?year=${year}`));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403) return drawHidden(year);
+      if (e instanceof ApiError && e.status === 404) return render(content, h('p', { className: 'muted' }, `Ingen smaking registrert for ${year}.`));
+      render(content, h('p', { className: 'error' }, (e as Error).message));
+    }
+  }
+
+  /** Before the reveal: your own ranking only. */
+  async function drawHidden(year: number) {
+    let tasting: Tasting | null = null;
+    try {
+      tasting = await api<Tasting>('GET', `/api/tasting?year=${year}`);
+    } catch {}
+    const mine = tasting && tasting.me
+      ? rank(summarize(
+          tasting.beers.map((b) => b.id),
+          tasting.beers.flatMap((b) => Object.entries(b.mine).map(([criterion, v]) => ({ beerId: b.id, participantId: tasting!.me!, criterion, milli: Math.round(v * 1000) }))),
+          tasting.criteria,
+        )).filter((s) => s.overall != null)
+      : [];
+    const beerName = (id: number) => tasting!.beers.find((b) => b.id === id)!.name;
+    render(content,
+      h('div', { className: 'notice' }, '🤫 Resultatene er hemmelige til de blir avslørt. Her ser du bare din egen rangering.'),
+      mine.length
+        ? h('div', { className: 'card' },
+            h('h2', { style: 'margin-top: 0' }, 'Din rangering så langt'),
+            h('table', {},
+              h('thead', {}, h('tr', {}, h('th', {}, '#'), h('th', {}, 'Øl'), h('th', { className: 'n' }, 'Ditt snitt'))),
+              h('tbody', {}, mine.map((s) => h('tr', {}, h('td', {}, String(s.place)), h('td', {}, beerName(s.beerId)), h('td', { className: 'n' }, formatScore(s.overall))))),
+            ))
+        : h('p', { className: 'muted' }, 'Du har ikke gitt noen karakterer ennå. ', h('a', { href: '/smaking/' }, 'Til smakingen →')),
+    );
+  }
+
+  function drawResults(results: Results) {
+    const { ranking, criteria } = results;
+    if (!ranking.length) return render(content, h('p', { className: 'muted' }, 'Ingen øl ble registrert dette året.'));
+
+    const list = h('div', { className: 'stack' }, ranking.map((r) => resultCard(r, criteria)));
+    // Presentation mode: hide everything, then reveal from last place to first, one tap at a time.
+    let hiddenFrom = 0;
+    const scored = ranking.filter((r) => r.overall != null).length;
+    const nextButton = h('button', { type: 'button', hidden: true }, 'Vis neste');
+    const startButton = h('button', { type: 'button', className: 'ghost' }, '🎁 Avslør én og én');
+    const cards = [...list.children] as HTMLElement[];
+    const winners = categoryWinners(ranking, criteria);
+    const apply = () => {
+      // Hide anything that would spoil the order while revealing.
+      winners.hidden = hiddenFrom > 0;
+      startButton.hidden = hiddenFrom > 0;
+      cards.forEach((c, i) => c.classList.toggle('hidden-result', i < hiddenFrom));
+      nextButton.hidden = hiddenFrom === 0;
+      nextButton.textContent = hiddenFrom === 1 ? 'Vis vinneren! 🏆' : 'Vis neste';
+    };
+    startButton.addEventListener('click', () => {
+      hiddenFrom = scored;
+      apply();
+      cards[scored - 1]?.scrollIntoView({ block: 'center' });
+    });
+    nextButton.addEventListener('click', () => {
+      hiddenFrom = Math.max(0, hiddenFrom - 1);
+      apply();
+      cards[hiddenFrom]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+
+    render(content,
+      h('div', { className: 'row' }, startButton),
+      list,
+      h('div', { className: 'row', style: 'position: sticky; bottom: 16px; justify-content: center' }, nextButton),
+      winners,
+    );
+  }
+
+  function resultCard(r: RankedBeer, criteria: Criterion[]) {
+    const medal = r.place != null && r.place <= 3 ? MEDALS[r.place - 1] : r.place != null ? `${r.place}.` : '–';
+    return h('article', { className: `card result${r.place === 1 ? ' top' : ''}` },
+      h('div', { className: 'row', style: 'flex-wrap: nowrap; align-items: center' },
+        h('div', { className: 'place', 'aria-label': r.place ? `Plass ${r.place}` : 'Ingen karakterer' }, medal),
+        h('div', { style: 'flex: 1; min-width: 0' },
+          h('h3', {}, r.beer.name),
+          h('div', { className: 'small muted' }, [beerMeta(r.beer), `Tatt med av ${r.beer.broughtBy}`].filter(Boolean).join(' · ')),
+        ),
+        h('div', {},
+          h('div', { className: 'overall' }, formatScore(r.overall)),
+          h('div', { className: 'small muted', style: 'text-align: right' }, `${r.raterCount} ${r.raterCount === 1 ? 'stemme' : 'stemmer'}`),
+        ),
+      ),
+      h('div', { className: 'criteria-grid' }, criteria.map((c) =>
+        h('div', {}, h('div', { className: 'k' }, c.label), h('div', { className: 'v' }, formatScore(r.criteria[c.key]))))),
+      r.ratings.length > 0 && h('details', {},
+        h('summary', {}, 'Se alle karakterene'),
+        h('div', { className: 'table-scroll' },
+          h('table', {},
+            h('thead', {}, h('tr', {}, h('th', {}, 'Hvem'), criteria.map((c) => h('th', { className: 'n' }, c.label)))),
+            h('tbody', {}, r.ratings.map((x) =>
+              h('tr', {}, h('td', {}, x.participant), criteria.map((c) => h('td', { className: 'n' }, formatScore(x.scores[c.key])))))),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /** The best beer on each criterion. */
+  function categoryWinners(ranking: RankedBeer[], criteria: Criterion[]) {
+    const rows = criteria.map((c) => {
+      const best = Math.max(...ranking.map((r) => r.criteria[c.key] ?? -Infinity));
+      if (!Number.isFinite(best)) return null;
+      const winners = ranking.filter((r) => Math.abs((r.criteria[c.key] ?? -1) - best) < 5e-4).map((r) => r.beer.name);
+      return h('tr', {}, h('td', {}, c.label), h('td', {}, winners.join(', ')), h('td', { className: 'n' }, formatScore(best)));
+    });
+    return h('section', { className: 'card' },
+      h('h2', { style: 'margin-top: 0' }, 'Best i hver kategori'),
+      h('div', { className: 'table-scroll', style: 'margin-top: 0' },
+        h('table', {}, h('tbody', {}, rows))),
+    );
+  }
+
+  start().catch((e) => render(content, h('p', { className: 'error' }, (e as Error).message)));
+</script>

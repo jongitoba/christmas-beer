@@ -1,0 +1,23 @@
+{
+  "name": "christmas-beer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "astro build",
+    "preview": "wrangler dev",
+    "check": "astro check && tsc -p worker",
+    "test": "node --test --no-warnings=ExperimentalWarning test/*.test.ts",
+    "test:e2e": "npm run build && node scripts/test-e2e.mjs"
+  },
+  "dependencies": {
+    "astro": "^7.4.11"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "@cloudflare/workers-types": "^5.20261112.1",
+    "@types/node": "^24.19.2",
+    "typescript": "^6.0.3",
+    "wrangler": "^4.160.1"
+  }
+}

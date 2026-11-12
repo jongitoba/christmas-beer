@@ -1,0 +1,105 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Admin">
+  <h1>Admin</h1>
+  <div id="content" class="stack"><p class="muted">Laster …</p></div>
+</Base>
+
+<script>
+  import { api, beerMeta, showAdminLink, type Me, type Tasting, type YearSummary } from '../client/api.ts';
+  import { $, h, render } from '../client/dom.ts';
+
+  const content = $('#content');
+
+  async function load() {
+    const me = await api<Me>('GET', '/api/me');
+    showAdminLink(me);
+    if (me.role !== 'admin') {
+      render(content, h('p', { className: 'muted' }, 'Denne siden er bare for admin. Logg inn med admin-koden for å få tilgang.'));
+      return;
+    }
+    const [tasting, years] = await Promise.all([api<Tasting>('GET', '/api/tasting'), api<YearSummary[]>('GET', '/api/years')]);
+    draw(tasting, years);
+  }
+
+  const run = async (action: () => Promise<unknown>) => {
+    try {
+      await action();
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  };
+
+  const reveal = (year: number, revealed: boolean) => run(() => api('POST', '/api/admin/reveal', { year, revealed }));
+
+  function draw(t: Tasting, years: YearSummary[]) {
+    const total = t.beers.length;
+    const done = t.participants.filter((p) => total && p.completed === total).length;
+
+    render(content,
+      h('section', { className: 'card stack' },
+        h('h2', { style: 'margin: 0' }, `Smakingen ${t.year}`),
+        h('p', { style: 'margin: 0' },
+          t.revealed
+            ? '✅ Resultatene er avslørt. Smakingen er låst for nye øl og karakterer.'
+            : `🤫 Hemmelig. ${done} av ${t.participants.length} har gitt alle karakterene på alle ${total} øl.`),
+        h('div', { className: 'row' },
+          t.revealed
+            ? h('button', { type: 'button', className: 'ghost', onclick: () => confirm('Skjule resultatene igjen? Da kan alle endre karakterer.') && reveal(t.year, false) }, 'Skjul resultatene igjen')
+            : h('button', { type: 'button', onclick: () => confirm('Avsløre resultatene nå? Da låses smakingen.') && reveal(t.year, true) }, '🎉 Avslør resultatene'),
+          t.revealed && h('a', { href: '/resultater/' }, 'Gå til resultatene →'),
+        ),
+      ),
+
+      h('section', { className: 'card' },
+        h('h2', { style: 'margin-top: 0' }, 'Deltakere'),
+        t.participants.length
+          ? h('table', {},
+              h('thead', {}, h('tr', {}, h('th', {}, 'Navn'), h('th', { className: 'n' }, 'Ferdig'), h('th', {}))),
+              h('tbody', {}, t.participants.map((p) =>
+                h('tr', {},
+                  h('td', {}, p.name),
+                  h('td', { className: 'n' }, `${p.completed}/${total}`),
+                  h('td', { className: 'n' }, h('button', {
+                    type: 'button', className: 'link',
+                    onclick: () => confirm(`Slette ${p.name}? Alle karakterene deres blir også slettet.`) && run(() => api('DELETE', `/api/admin/participants/${p.id}`)),
+                  }, 'Slett')),
+                ))))
+          : h('p', { className: 'muted' }, 'Ingen deltakere ennå.'),
+      ),
+
+      h('section', { className: 'card' },
+        h('h2', { style: 'margin-top: 0' }, 'Øl'),
+        h('p', { className: 'small muted', style: 'margin-top: 0' }, 'Endre øl gjør du på smakingssiden.'),
+        t.beers.length
+          ? h('table', {},
+              h('thead', {}, h('tr', {}, h('th', {}, 'Øl'), h('th', {}, 'Tatt med av'), h('th', { className: 'n' }, 'Vurdert av'), h('th', {}))),
+              h('tbody', {}, t.beers.map((b) =>
+                h('tr', {},
+                  h('td', { style: 'white-space: normal' }, b.name, h('div', { className: 'small muted' }, beerMeta(b))),
+                  h('td', {}, b.broughtBy.name),
+                  h('td', { className: 'n' }, String(b.raterCount)),
+                  h('td', { className: 'n' }, !t.revealed && h('button', {
+                    type: 'button', className: 'link',
+                    onclick: () => confirm(`Slette «${b.name}»? Alle karakterene for ølet blir også slettet.`) && run(() => api('DELETE', `/api/beers/${b.id}`)),
+                  }, 'Slett')),
+                ))))
+          : h('p', { className: 'muted' }, 'Ingen øl ennå.'),
+      ),
+
+      years.some((y) => y.year !== t.year) && h('section', { className: 'card' },
+        h('h2', { style: 'margin-top: 0' }, 'Tidligere år'),
+        h('table', {}, h('tbody', {}, years.filter((y) => y.year !== t.year).map((y) =>
+          h('tr', {},
+            h('td', {}, h('a', { href: `/resultater/?år=${y.year}` }, String(y.year))),
+            h('td', {}, `${y.beerCount} øl`),
+            h('td', { className: 'n' }, h('button', { type: 'button', className: 'link', onclick: () => reveal(y.year, !y.revealed) }, y.revealed ? 'Skjul' : 'Avslør')),
+          )))),
+      ),
+    );
+  }
+
+  load().catch((e) => render(content, h('p', { className: 'error' }, (e as Error).message)));
+</script>

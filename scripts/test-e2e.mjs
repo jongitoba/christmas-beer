@@ -81,13 +81,22 @@ try {
   // Without a session nothing under /api returns data.
   const anon = client();
   const blocked = [
-    ['GET', '/api/me'], ['GET', '/api/tasting'], ['GET', '/api/results'], ['GET', '/api/years'],
-    ['GET', '/api/participants'], ['GET', '/api/history'], ['POST', '/api/beers', { name: 'x' }], ['PUT', '/api/ratings/1', { scores: {} }],
+    ['GET', '/api/me'], ['GET', '/api/tasting'],
+    ['GET', '/api/participants'], ['POST', '/api/beers', { name: 'x' }], ['PUT', '/api/ratings/1', { scores: {} }],
     ['POST', '/api/admin/reveal', { year: 2026, revealed: true }], ['DELETE', '/api/admin/participants/1'],
   ];
   for (const [m, p, b] of blocked) {
     const res = await anon(m, p, b);
     check(`${m} ${p} without session is blocked`, res.status === 401, String(res.status));
+  }
+  // Results are public, but only for revealed years.
+  const pubYears = await anon('GET', '/api/years');
+  check('year list is public', pubYears.status === 200, String(pubYears.status));
+  const pubHistory = await anon('GET', '/api/history');
+  check('history is public and only has revealed years', pubHistory.status === 200 && (pubHistory.json?.years ?? []).length === (pubYears.json ?? []).filter((y) => y.revealed).length);
+  for (const y of (pubYears.json ?? []).filter((y) => !y.revealed)) {
+    const r = await anon('GET', `/api/results?year=${y.year}`);
+    check(`unrevealed ${y.year} results stay hidden without login`, r.status === 403, String(r.status));
   }
   const forged = await fetch(BASE + '/api/tasting', { headers: { cookie: '__Host-juleol=eyJyb2xlIjoiYWRtaW4ifQ.AAAA' } });
   check('forged session cookie is blocked', forged.status === 401, String(forged.status));
@@ -119,6 +128,7 @@ try {
     const view = await kari('GET', '/api/tasting');
     check('own scores are visible', view.json?.beers?.[0]?.mine?.utseende === 7.345);
     check('results hidden before reveal', (await kari('GET', '/api/results')).status === 403);
+    check('results hidden before reveal, also without login', (await anon('GET', `/api/results?year=${view.json.year}`)).status === 403);
 
     await jon('POST', '/api/login', { code: ADMIN_CODE });
     await jon('POST', '/api/me', { name: 'Jon' });
@@ -130,6 +140,7 @@ try {
     check('results show the overall score', top && Math.abs(top.overall - expected) < 1e-9, top && String(top.overall));
     const hist = await kari('GET', '/api/history');
     check('revealed year shows up in history', hist.json?.years?.some((y) => y.year === view.json.year && y.beers.length === 1));
+    check('revealed results are public', (await anon('GET', `/api/results?year=${view.json.year}`)).status === 200);
     check('locked after reveal', (await kari('PUT', `/api/ratings/${beer.json.id}`, { scores: { smak: 5 } })).status === 409);
   }
 } finally {

@@ -6,8 +6,8 @@
   --viz-2: #eb6834;
   --viz-neg: #2a78d6;
   --viz-pos: #e34948;
-  --viz-grid: #ebe4d8;
-  --viz-base: #c3c2b7;
+  --viz-grid: #dce7ef;
+  --viz-base: #a9bccb;
   --viz-ink-on-fill: #ffffff;
   --viz-ink-on-light: #0b0b0b;
 }
@@ -17,8 +17,8 @@
     --viz-2: #d95926;
     --viz-neg: #3987e5;
     --viz-pos: #e66767;
-    --viz-grid: #2c2622;
-    --viz-base: #4a413b;
+    --viz-grid: #233a56;
+    --viz-base: #3b5a7e;
   }
 }
 :root[data-theme='dark'] {
@@ -26,8 +26,8 @@
   --viz-2: #d95926;
   --viz-neg: #3987e5;
   --viz-pos: #e66767;
-  --viz-grid: #2c2622;
-  --viz-base: #4a413b;
+  --viz-grid: #233a56;
+  --viz-base: #3b5a7e;
 }
 
 figure.viz { margin: 0; min-width: 0; }

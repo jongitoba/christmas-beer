@@ -19,7 +19,7 @@ import Base from '../layouts/Base.astro';
   } from '../client/api.ts';
   import { $, h, render } from '../client/dom.ts';
   import { bars, diverging, dotRows, figure, heatLegend, heatmap, legend, table, type BarRow } from '../client/charts.ts';
-  import { formatScore, rank, summarize, type Criterion } from '../lib/score.ts';
+  import { formatScore, INPUT_DECIMALS, rank, summarize, type Criterion } from '../lib/score.ts';
 
   const ALL = 'alle';
   const MEDALS = ['🥇', '🥈', '🥉'];
@@ -244,7 +244,7 @@ import Base from '../layouts/Base.astro';
           h('table', {},
             h('thead', {}, h('tr', {}, h('th', {}, 'Hvem'), criteria.map((c) => h('th', { className: 'n' }, c.label)))),
             h('tbody', {}, r.ratings.map((x) =>
-              h('tr', {}, h('td', {}, x.participant), criteria.map((c) => h('td', { className: 'n' }, formatScore(x.scores[c.key])))))),
+              h('tr', {}, h('td', {}, x.participant), criteria.map((c) => h('td', { className: 'n' }, formatScore(x.scores[c.key], INPUT_DECIMALS)))))),
           ),
         ),
       ),

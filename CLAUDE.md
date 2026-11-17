@@ -84,8 +84,10 @@ setup). Wait for Jon's go-ahead before switching.
 ## Branches
 
 - All work happens on a separate branch. Never commit directly to `main`.
-- Name it `claude/` followed by 1–3 keywords describing the content, joined by hyphens,
-  e.g. `claude/login-page` or `claude/fix-csv-export`.
+- Name it `claude/` followed by 1–3 keywords describing what the branch changes, joined by
+  hyphens, e.g. `claude/login-page` or `claude/fix-csv-export`. The name must describe the
+  work. Never keep an auto-generated or random name (like `claude/practical-mccarthy-29cwv7`);
+  create a properly named branch instead, even if the session starts on a generated one.
 - Branch off an up-to-date `main`: `git fetch origin && git switch -c claude/<keywords> origin/main`.
 - A new task means a new branch. Never build on a branch that has already been merged.
 - Once merged, delete the branch both on GitHub and locally.

@@ -21,16 +21,19 @@ export const CRITERIA: readonly Criterion[] = [
 export const MIN_SCORE = 1;
 export const MAX_SCORE = 11;
 export const DECIMALS = 3;
+/** Max decimals a person can enter when scoring. Storage and result display keep 3 decimals. */
+export const INPUT_DECIMALS = 2;
 const SCALE = 10 ** DECIMALS;
+const INPUT_SCALE = 10 ** INPUT_DECIMALS;
 
 /**
- * Converts a score to integer thousandths (7.345 → 7345), which is how scores are stored.
- * Throws a RangeError (Norwegian message, shown on the page) if the score is out of range or has more than 3 decimals.
+ * Converts a score to integer thousandths (7.35 → 7350), which is how scores are stored.
+ * Throws a RangeError (Norwegian message, shown on the page) if the score is out of range or has more than 2 decimals.
  */
 export function toMilli(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new RangeError('Karakteren må være et tall');
   const milli = Math.round(value * SCALE);
-  if (Math.abs(value * SCALE - milli) > 1e-6) throw new RangeError(`Maks ${DECIMALS} desimaler`);
+  if (Math.abs(value * INPUT_SCALE - Math.round(value * INPUT_SCALE)) > 1e-6) throw new RangeError(`Maks ${INPUT_DECIMALS} desimaler`);
   if (milli < MIN_SCORE * SCALE || milli > MAX_SCORE * SCALE) {
     throw new RangeError(`Karakteren må være mellom ${MIN_SCORE} og ${MAX_SCORE}`);
   }
@@ -46,15 +49,15 @@ export const fromMilli = (milli: number) => milli / SCALE;
 export function parseScoreInput(text: string): number | null {
   const cleaned = text.trim().replace(/\s/g, '').replace(',', '.');
   if (cleaned === '') return null;
-  if (!/^\d{1,2}(\.\d*)?$/.test(cleaned)) throw new RangeError('Skriv et tall, f.eks. 7,345');
+  if (!/^\d{1,2}(\.\d*)?$/.test(cleaned)) throw new RangeError('Skriv et tall, f.eks. 7,35');
   const value = Number(cleaned);
   return fromMilli(toMilli(value));
 }
 
 /** Formats a score the Norwegian way with 3 decimals: 7.5 → "7,500". */
-export function formatScore(value: number | null | undefined): string {
+export function formatScore(value: number | null | undefined, decimals = DECIMALS): string {
   if (value == null) return '–';
-  return value.toLocaleString('nb-NO', { minimumFractionDigits: DECIMALS, maximumFractionDigits: DECIMALS });
+  return value.toLocaleString('nb-NO', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
 /** Rounds to 3 decimals, used for display and for deciding ties. */

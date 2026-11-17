@@ -202,13 +202,13 @@ test('full tasting: own scores only before reveal, full results after, locked on
   // Kari rates her own beer (allowed) and Ola's. Ola rates Kari's beer partially.
   assert.equal((await kari.call('PUT', `/api/ratings/${beerA.id}`, { scores: scores(10, 9, 8, 7, 6, 5) })).status, 200);
   assert.equal((await kari.call('PUT', `/api/ratings/${beerB.id}`, { scores: scores(2, 2, 2, 2, 2, 2) })).status, 200);
-  assert.equal((await ola.call('PUT', `/api/ratings/${beerA.id}`, { scores: { utseende: 7.345, smak: 11 } })).status, 200);
+  assert.equal((await ola.call('PUT', `/api/ratings/${beerA.id}`, { scores: { utseende: 7.35, smak: 11 } })).status, 200);
 
   // Before reveal: you see only your own scores, plus counts.
   const olaView = (await ola.call('GET', '/api/tasting')).body;
   assert.equal(olaView.revealed, false);
   const a = olaView.beers.find((b: Json) => b.id === beerA.id);
-  assert.deepEqual(a.mine, { utseende: 7.345, smak: 11 });
+  assert.deepEqual(a.mine, { utseende: 7.35, smak: 11 });
   assert.equal(a.raterCount, 2);
   assert.equal(a.broughtBy.name, 'Kari');
   assert.equal(olaView.beers.find((b: Json) => b.id === beerB.id).raterCount, 1);
@@ -228,9 +228,9 @@ test('full tasting: own scores only before reveal, full results after, locked on
   const [first, second] = res.ranking;
   assert.equal(first.beer.name, 'Nisseøl');
   assert.equal(first.place, 1);
-  // utseende (10+7.345)/2, smak (6+11)/2, the others only Kari's.
-  assert.deepEqual(first.criteria, { utseende: 8.6725, lyd: 9, rase: 8, fylde: 7, smak: 8.5, wok: 5 });
-  assert.ok(Math.abs(first.overall - (8.6725 + 9 + 8 + 7 + 8.5 + 5) / 6) < 1e-9);
+  // utseende (10+7.35)/2, smak (6+11)/2, the others only Kari's.
+  assert.deepEqual(first.criteria, { utseende: 8.675, lyd: 9, rase: 8, fylde: 7, smak: 8.5, wok: 5 });
+  assert.ok(Math.abs(first.overall - (8.675 + 9 + 8 + 7 + 8.5 + 5) / 6) < 1e-9);
   assert.equal(first.raterCount, 2);
   assert.deepEqual(first.ratings.map((r: Json) => r.participant), ['Kari', 'Ola']);
   assert.equal(second.beer.name, 'Juleøl');
@@ -251,7 +251,7 @@ test('score validation', async () => {
   const c = client(env);
   await c.join('jul', 'Kari');
   const beer = (await c.call('POST', '/api/beers', { name: 'Nisseøl' })).body;
-  for (const bad of [{ smak: 11.001 }, { smak: 0.5 }, { smak: 7.3456 }, { smak: '7' }, { ukjent: 5 }]) {
+  for (const bad of [{ smak: 11.001 }, { smak: 0.5 }, { smak: 7.356 }, { smak: '7' }, { ukjent: 5 }]) {
     assert.equal((await c.call('PUT', `/api/ratings/${beer.id}`, { scores: bad })).status, 400, JSON.stringify(bad));
   }
   assert.equal((await c.call('PUT', `/api/ratings/${beer.id}`, { scores: [] })).status, 400);

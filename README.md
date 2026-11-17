@@ -3,7 +3,7 @@
 A site for ranking Christmas beers at the yearly tasting: https://christmas-beer.jonoba.no
 
 Everyone brings their own beer, adds it to the site, and scores every beer from 1 to 11
-(up to 3 decimals) on Utseende, Lyd, Rase, Fylde, Smak and Wok. A beer's overall score is
+(up to 2 decimals) on Utseende, Lyd, Rase, Fylde, Smak and Wok. A beer's overall score is
 the mean of its per-criterion averages. Scores stay hidden until the admin reveals them.
 
 ## Development

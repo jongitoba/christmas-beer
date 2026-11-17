@@ -32,7 +32,7 @@ import Base from '../layouts/Base.astro';
   </section>
 
   <h2>Ølene</h2>
-  <p class="muted small">Gi hver øl en karakter fra 1 til 11, med opptil tre desimaler. Du ser bare dine egne karakterer til resultatene avsløres.</p>
+  <p class="muted small">Gi hver øl en karakter fra 1 til 11, med opptil to desimaler. Du ser bare dine egne karakterer til resultatene avsløres.</p>
   <div id="beers" class="stack"><p class="muted">Laster …</p></div>
 
   <h2>Fremdrift</h2>
@@ -42,7 +42,7 @@ import Base from '../layouts/Base.astro';
 <script>
   import { api, beerMeta, showAdminLink, MAX_COMMENT, type Me, type Tasting, type TastingBeer } from '../client/api.ts';
   import { $, h, render } from '../client/dom.ts';
-  import { formatScore, parseScoreInput, MAX_SCORE, MIN_SCORE } from '../lib/score.ts';
+  import { formatScore, parseScoreInput, INPUT_DECIMALS, MAX_SCORE, MIN_SCORE } from '../lib/score.ts';
 
   let me: Me;
   let tasting: Tasting;
@@ -189,16 +189,16 @@ import Base from '../layouts/Base.astro';
       const id = `s-${beer.id}-${c.key}`;
       const text = h('input', {
         id, type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: '–',
-        value: existing != null ? formatScore(existing) : '',
+        value: existing != null ? formatScore(existing, INPUT_DECIMALS) : '',
         'aria-describedby': `${id}-hint`,
       });
       const range = h('input', {
-        type: 'range', min: MIN_SCORE, max: MAX_SCORE, step: '0.001', value: existing ?? 6,
+        type: 'range', min: MIN_SCORE, max: MAX_SCORE, step: '0.01', value: existing ?? 6,
         className: existing != null ? '' : 'unset', 'aria-label': `${c.label} (glidebryter)`, tabindex: '-1',
       });
       range.addEventListener('input', () => {
         range.classList.remove('unset');
-        text.value = formatScore(Number(range.value));
+        text.value = formatScore(Number(range.value), INPUT_DECIMALS);
         updatePreview();
       });
       text.addEventListener('input', () => {
@@ -211,7 +211,7 @@ import Base from '../layouts/Base.astro';
       });
       fields.set(c.key, { text, range });
       return h('div', { className: 'score-row' }, h('label', { for: id }, c.label), range, text,
-        h('span', { id: `${id}-hint`, hidden: true }, `Tall fra ${MIN_SCORE} til ${MAX_SCORE}, maks tre desimaler`));
+        h('span', { id: `${id}-hint`, hidden: true }, `Tall fra ${MIN_SCORE} til ${MAX_SCORE}, maks to desimaler`));
     });
 
     const commentId = `c-${beer.id}`;

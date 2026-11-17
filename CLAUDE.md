@@ -43,7 +43,7 @@ Chosen stack (the same as jonoba.no, plus D1):
 
 Domain rules that the code depends on:
 
-- Scores are 1–11 with up to 3 decimals, stored as integer thousandths.
+- Scores are 1–11, entered with up to 2 decimals (averages shown with 3), stored as integer thousandths.
 - A beer's overall score is the average per criterion over everyone who scored it,
   then the mean of those criterion averages. Missing scores are left out.
 - Criteria live in `src/lib/score.ts`. Each tasting stores its own copy, so editing the

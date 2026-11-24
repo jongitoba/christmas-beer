@@ -12,5 +12,5 @@
  * and anyone not listed can still add their own name.
  */
 export const DEFAULT_PARTICIPANTS: readonly string[] = [
-  'John', 'Barstad', 'Mange', 'Voldæn', 'Ælen', 'Scott', 'Morten', 'Veronika', 'Kristina', 'Elise', 'Johan', 'Joakim',
+  'John', 'Barstad', 'Mange', 'Voldæn', 'Ælen', 'Scott', 'Morten', 'Veronika', 'Kristina', 'Elise', 'Johan', 'Joakim', 'Fredrik',
 ];
